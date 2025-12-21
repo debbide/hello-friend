@@ -1,16 +1,15 @@
 # 合并版 Dockerfile - 前后端一体化镜像
-# 使用多阶段构建
+# 使用多阶段构建 + 跨平台支持
 
-# ===== Stage 1: 构建前端 =====
-FROM node:20-alpine AS frontend-builder
+# ===== Stage 1: 构建前端 (在原生架构下执行) =====
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 
 # 复制前端依赖文件
 COPY package*.json ./
-COPY bun.lockb ./
 
-# 安装依赖
+# 安装依赖（在构建机器的原生架构下执行，避免 QEMU 模拟问题）
 RUN npm install
 
 # 复制前端源码
@@ -26,7 +25,19 @@ COPY public/ ./public/
 # 构建前端
 RUN npm run build
 
-# ===== Stage 2: 最终镜像 =====
+# ===== Stage 2: 安装后端依赖 (在原生架构下执行) =====
+FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
+
+WORKDIR /app
+
+# 复制后端依赖文件
+COPY backend/package*.json ./
+
+# 安装后端依赖（不含 devDependencies）
+# 这一步在构建机器上执行，避免 QEMU 问题
+RUN npm install --production --ignore-scripts
+
+# ===== Stage 3: 最终镜像 (目标架构) =====
 FROM node:20-alpine
 
 # 安装 Chromium for Puppeteer
@@ -44,9 +55,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# 复制后端依赖文件并安装
-COPY backend/package*.json ./
-RUN npm install --production
+# 从 builder 复制 node_modules
+COPY --from=backend-builder /app/node_modules ./node_modules
 
 # 复制后端代码
 COPY backend/ ./
