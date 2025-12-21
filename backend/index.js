@@ -74,6 +74,63 @@ app.post('/api/settings', async (req, res) => {
   }
 });
 
+// ==================== Auth API ====================
+
+// 默认管理员账号
+const DEFAULT_ADMIN = { username: 'admin', password: 'admin' };
+
+// 简单的 token 存储（生产环境应使用 JWT 或 session）
+let authTokens = new Map();
+
+// 登录
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const settings = loadSettings();
+
+  // 检查是否匹配配置的账号或默认账号
+  const adminUser = settings.webUser || DEFAULT_ADMIN.username;
+  const adminPass = settings.webPassword || DEFAULT_ADMIN.password;
+
+  if (username === adminUser && password === adminPass) {
+    const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    authTokens.set(token, { username, isAdmin: true });
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: { username, isAdmin: true }
+      }
+    });
+  } else {
+    res.status(401).json({ success: false, error: '用户名或密码错误' });
+  }
+});
+
+// 登出
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace('Bearer ', '');
+    authTokens.delete(token);
+  }
+  res.json({ success: true });
+});
+
+// 验证 token
+app.get('/api/auth/verify', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.json({ valid: false });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  const user = authTokens.get(token);
+  if (user) {
+    res.json({ valid: true, user });
+  } else {
+    res.json({ valid: false });
+  }
+});
+
 // 重启 Bot
 app.post('/api/restart', async (req, res) => {
   try {
@@ -180,6 +237,89 @@ app.post('/api/subscriptions/refresh', async (req, res) => {
 app.get('/api/subscriptions/history', (req, res) => {
   const history = scheduler?.getNewItemsHistory() || [];
   res.json({ success: true, data: history });
+});
+
+// ==================== Stats API ====================
+
+app.get('/api/stats', (req, res) => {
+  const settings = loadSettings();
+  res.json({
+    success: true,
+    data: {
+      online: !!currentBot,
+      uptime: process.uptime() > 3600
+        ? `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`
+        : `${Math.floor(process.uptime() / 60)}m`,
+      memory: Math.round((process.memoryUsage().heapUsed / process.memoryUsage().heapTotal) * 100),
+      lastRestart: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      totalCommands: 0,
+      commandsToday: 0,
+      aiTokensUsed: 0,
+      rssFeeds: scheduler?.getSubscriptions()?.length || 0,
+      pendingReminders: 0,
+      activeNotes: 0,
+      commandStats: [],
+      commandTrend: [],
+      recentActivity: [],
+    }
+  });
+});
+
+// ==================== Notifications API ====================
+
+app.get('/api/notifications', (req, res) => {
+  res.json({ success: true, data: [] });
+});
+
+app.post('/api/notifications/:id/read', (req, res) => {
+  res.json({ success: true });
+});
+
+app.post('/api/notifications/read-all', (req, res) => {
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', (req, res) => {
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications', (req, res) => {
+  res.json({ success: true });
+});
+
+// ==================== Logs API ====================
+
+app.get('/api/logs', (req, res) => {
+  res.json({ success: true, data: [] });
+});
+
+// ==================== Tools API ====================
+
+const defaultTools = [
+  { id: "tr", command: "/tr", label: "翻译", description: "快速翻译文本到目标语言", emoji: "🌐", enabled: true, usage: 0 },
+  { id: "short", command: "/short", label: "短链接", description: "生成短链接，方便分享", emoji: "🔗", enabled: true, usage: 0 },
+  { id: "qr", command: "/qr", label: "二维码", description: "生成二维码图片", emoji: "📱", enabled: true, usage: 0 },
+  { id: "weather", command: "/weather", label: "天气查询", description: "查询全球城市天气", emoji: "🌤️", enabled: true, usage: 0 },
+  { id: "rate", command: "/rate", label: "汇率换算", description: "实时汇率换算", emoji: "💰", enabled: true, usage: 0 },
+  { id: "ip", command: "/ip", label: "IP 查询", description: "查询 IP 归属地", emoji: "🌍", enabled: true, usage: 0 },
+];
+
+app.get('/api/tools', (req, res) => {
+  res.json({ success: true, data: defaultTools });
+});
+
+app.post('/api/tools/:id/toggle', (req, res) => {
+  res.json({ success: true });
+});
+
+// ==================== Reminders API ====================
+
+app.get('/api/reminders', (req, res) => {
+  res.json({ success: true, data: [] });
+});
+
+app.get('/api/notes', (req, res) => {
+  res.json({ success: true, data: [] });
 });
 
 // ==================== Bot 启动 ====================

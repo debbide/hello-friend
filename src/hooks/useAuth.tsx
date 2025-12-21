@@ -29,7 +29,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const result = await authApi.verify();
-    if (result.success && result.data?.valid && result.data.user) {
+    // 后端直接返回 { valid: true, user } 格式
+    if ((result as any).valid && (result as any).user) {
+      setUser((result as any).user);
+    } else if (result.success && result.data?.valid && result.data.user) {
+      // 兼容包装格式
       setUser(result.data.user);
     } else {
       localStorage.removeItem(AUTH_TOKEN_KEY);

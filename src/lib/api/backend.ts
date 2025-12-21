@@ -8,14 +8,14 @@ function getBackendUrl(): string {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  
+
   // 开发模式下使用 localhost
   if (import.meta.env.DEV) {
     return 'http://localhost:3001';
   }
-  
-  // 生产环境下使用相对路径（假设 nginx 代理）
-  return '/api';
+
+  // 生产环境下使用空字符串（同源部署，endpoint 已包含 /api）
+  return '';
 }
 
 const BACKEND_URL = getBackendUrl();
@@ -32,23 +32,40 @@ async function request<T>(
 ): Promise<ApiResponse<T>> {
   try {
     const url = `${BACKEND_URL}${endpoint}`;
+
+    // 自动附加 Authorization header
+    const token = localStorage.getItem('bot_admin_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...headers,
         ...options.headers,
       },
     });
 
+    const data = await response.json().catch(() => ({}));
+
+    // 直接返回后端的响应格式（后端已包含 success/data/error）
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
       return {
         success: false,
-        error: errorData.error || `HTTP ${response.status}`,
+        error: data.error || `HTTP ${response.status}`,
       };
     }
 
-    const data = await response.json();
+    // 如果后端返回了 success 字段，直接透传
+    if ('success' in data) {
+      return data;
+    }
+
+    // 兼容没有 success 字段的响应
     return { success: true, data };
   } catch (error) {
     return {

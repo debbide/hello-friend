@@ -11,10 +11,10 @@ export function useNotifications() {
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
     if (message.type === 'notification') {
       const newNotification = message.data as Notification;
-      
+
       // 添加新通知到列表顶部
       setNotifications(prev => [newNotification, ...prev]);
-      
+
       // 显示 toast 通知
       toast(newNotification.title, {
         description: newNotification.message,
@@ -23,7 +23,7 @@ export function useNotifications() {
     }
   }, []);
 
-  // 连接 WebSocket
+  // 连接 WebSocket（当后端实现 WebSocket 时启用）
   const { isConnected } = useWebSocket({
     onMessage: handleWebSocketMessage,
     onConnect: () => {
@@ -32,6 +32,7 @@ export function useNotifications() {
     onDisconnect: () => {
       console.log('[Notifications] WebSocket disconnected');
     },
+    autoReconnect: false, // 禁用自动重连，避免后端未实现 WebSocket 时持续报错
   });
 
   // 加载通知列表
@@ -52,7 +53,7 @@ export function useNotifications() {
   const markAsRead = useCallback(async (id: string) => {
     const result = await notificationsApi.markAsRead(id);
     if (result.success) {
-      setNotifications(prev => 
+      setNotifications(prev =>
         prev.map(n => n.id === id ? { ...n, read: true } : n)
       );
     }
