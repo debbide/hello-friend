@@ -161,6 +161,10 @@ const selfHostedApi = {
 // Cloud API implementation (Supabase Edge Functions)
 const cloudApi = {
   async parse(url: string, keywords?: Keywords): Promise<RSSParseResponse> {
+    // 如果 supabase 未配置，直接返回错误
+    if (!supabase) {
+      return { success: false, error: 'Supabase not configured' };
+    }
     try {
       const { data, error } = await supabase.functions.invoke('rss-parser', {
         body: { url, keywords },
@@ -227,7 +231,7 @@ export const rssApi = {
   refreshAll: () => isSelfHosted() ? selfHostedApi.refreshAll() : cloudApi.refreshAll(),
   refreshSubscription: (id: string) => isSelfHosted() ? selfHostedApi.refreshSubscription(id) : cloudApi.refreshSubscription(),
   getHistory: () => isSelfHosted() ? selfHostedApi.getHistory() : cloudApi.getHistory(),
-  
+
   // 检查是否为自托管模式
   isSelfHosted,
 };
