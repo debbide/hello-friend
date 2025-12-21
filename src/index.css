@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* TG Bot Admin Panel - 简约清新风格 */
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 20% 25%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 20% 25%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 20% 25%;
+
+    /* 清新薄荷绿作为主色 */
+    --primary: 168 76% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 30% 96%;
+    --secondary-foreground: 222 20% 25%;
+
+    --muted: 210 30% 96%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 168 60% 94%;
+    --accent-foreground: 168 76% 32%;
+
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 95% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 200 90% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 25% 90%;
+    --input: 214 25% 90%;
+    --ring: 168 76% 42%;
+
+    --radius: 0.75rem;
+
+    /* 侧边栏 - 浅色清新 */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 20% 25%;
+    --sidebar-primary: 168 76% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 168 60% 94%;
+    --sidebar-accent-foreground: 168 76% 32%;
+    --sidebar-border: 214 25% 92%;
+    --sidebar-ring: 168 76% 42%;
+    --sidebar-muted: 215 15% 55%;
+
+    /* Chart colors - 清新配色 */
+    --chart-1: 168 76% 42%;
+    --chart-2: 200 90% 50%;
+    --chart-3: 38 95% 55%;
+    --chart-4: 280 60% 55%;
+    --chart-5: 340 70% 55%;
+  }
+
+  .dark {
+    --background: 220 20% 10%;
+    --foreground: 210 40% 96%;
+
+    --card: 220 20% 13%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 220 20% 13%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 168 70% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 220 20% 18%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 168 50% 18%;
+    --accent-foreground: 168 70% 70%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 210 40% 96%;
+
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 85% 45%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 200 80% 45%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 20% 20%;
+    --input: 220 20% 20%;
+    --ring: 168 70% 50%;
+
+    --sidebar-background: 220 20% 10%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 168 70% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 168 40% 15%;
+    --sidebar-accent-foreground: 168 70% 70%;
+    --sidebar-border: 220 20% 18%;
+    --sidebar-ring: 168 70% 50%;
+    --sidebar-muted: 215 15% 55%;
+
+    --chart-1: 168 70% 55%;
+    --chart-2: 200 85% 55%;
+    --chart-3: 38 90% 55%;
+    --chart-4: 280 55% 60%;
+    --chart-5: 340 65% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Nunito', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-sm;
+  }
+}
