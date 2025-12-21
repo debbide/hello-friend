@@ -6,13 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Settings, 
-  Bot, 
-  Key, 
-  Bell, 
-  Database, 
-  RefreshCw, 
+import {
+  Settings,
+  Bot,
+  Key,
+  Bell,
+  Database,
+  RefreshCw,
   Download,
   Trash2,
   Eye,
@@ -22,12 +22,29 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { settingsApi, statusApi, BotSettings, BotStatus } from "@/lib/api/backend";
+import { settingsApi, statusApi, authApi, notificationsApi, BotSettings, BotStatus } from "@/lib/api/backend";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const SettingsPage = () => {
   const [showToken, setShowToken] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Password Change State
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+
   const [isRestarting, setIsRestarting] = useState(false);
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [config, setConfig] = useState<BotSettings>({
@@ -96,9 +113,42 @@ const SettingsPage = () => {
   };
 
   const handleTestNotification = async () => {
-    toast.info("发送测试通知...");
-    // 这里可以调用后端 API 发送测试消息
+    toast.info("正在发送测试通知...");
+    const result = await notificationsApi.sendTest();
+    if (result.success) {
+      toast.success("测试通知已发送，请检查 Telegram");
+    } else {
+      toast.error(result.error || "发送失败");
+    }
   };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      toast.error("请填写所有字段");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("两次输入的密码不一致");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    const result = await authApi.changePassword(oldPassword, newPassword);
+    setIsChangingPassword(false);
+
+    if (result.success) {
+      toast.success("密码修改成功");
+      setIsPasswordDialogOpen(false);
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } else {
+      toast.error(result.error || "修改失败");
+    }
+  };
+
+
 
   if (isLoading) {
     return (
@@ -299,17 +349,113 @@ const SettingsPage = () => {
               <RefreshCw className="w-4 h-4" />
               重启 Bot
             </Button>
-            <Button variant="outline" className="w-full justify-start gap-2">
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleTestNotification}>
               <Bell className="w-4 h-4" />
               发送测试通知
             </Button>
-            <Button variant="outline" className="w-full justify-start gap-2">
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setIsPasswordDialogOpen(true)}>
               <Key className="w-4 h-4" />
               修改面板密码
             </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* Password Change Dialog */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>修改面板密码</DialogTitle>
+            <DialogDescription>
+              请输入当前密码和新密码以修改登录凭证。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>当前密码</Label>
+              <Input
+                type="password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                placeholder="请输入当前密码"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>新密码</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="请输入新密码"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>确认新密码</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="请再次输入新密码"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>取消</Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+              {isChangingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              确认修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Change Dialog */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>修改面板密码</DialogTitle>
+            <DialogDescription>
+              请输入当前密码和新密码以修改登录凭证。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>当前密码</Label>
+              <Input
+                type="password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                placeholder="请输入当前密码"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>新密码</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="请输入新密码"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>确认新密码</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="请再次输入新密码"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>取消</Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+              {isChangingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              确认修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Info Card */}
       <Card className="bg-gradient-to-br from-accent/50 to-background">

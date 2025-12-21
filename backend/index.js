@@ -312,10 +312,40 @@ app.delete('/api/notifications', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/notifications/test', async (req, res) => {
+  try {
+    const settings = loadSettings();
+    if (!settings.adminId || !currentBot) {
+      return res.status(400).json({ success: false, error: 'Bot 未连接或未配置管理员 ID' });
+    }
+
+    await currentBot.telegram.sendMessage(settings.adminId, '🔔 这是一条来自 Web 面板的测试通知');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==================== Logs API ====================
 
 app.get('/api/logs', (req, res) => {
   res.json({ success: true, data: [] });
+});
+
+// ==================== Auth API Extensions ====================
+
+app.post('/api/auth/change-password', (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  const settings = loadSettings();
+  const currentPassword = settings.webPassword || DEFAULT_ADMIN.password;
+
+  if (oldPassword !== currentPassword) {
+    return res.status(401).json({ success: false, error: '旧密码错误' });
+  }
+
+  settings.webPassword = newPassword;
+  saveSettings(settings);
+  res.json({ success: true });
 });
 
 // ==================== Tools API ====================

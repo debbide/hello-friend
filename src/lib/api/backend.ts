@@ -411,6 +411,10 @@ export const notificationsApi = {
   async clear(): Promise<ApiResponse<{ success: boolean }>> {
     return request('/api/notifications', { method: 'DELETE' });
   },
+
+  async sendTest(): Promise<ApiResponse<{ success: boolean }>> {
+    return request('/api/notifications/test', { method: 'POST' });
+  },
 };
 
 // ==================== Tools API ====================
@@ -463,6 +467,13 @@ export const authApi = {
 
   async verify(): Promise<ApiResponse<{ valid: boolean; user?: AuthUser }>> {
     return request('/api/auth/verify');
+  },
+
+  async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
   },
 };
 
