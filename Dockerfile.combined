@@ -1,19 +1,32 @@
 # 合并版 Dockerfile - 前后端一体化镜像
-# 使用多阶段构建减小体积
+# 使用多阶段构建
 
 # ===== Stage 1: 构建前端 =====
 FROM node:20-alpine AS frontend-builder
 
-WORKDIR /app
+WORKDIR /frontend
 
+# 复制前端依赖文件
 COPY package*.json ./
 COPY bun.lockb ./
+
+# 安装依赖
 RUN npm install
 
-COPY . .
+# 复制前端源码
+COPY index.html ./
+COPY vite.config.ts ./
+COPY tsconfig*.json ./
+COPY tailwind.config.ts ./
+COPY postcss.config.js ./
+COPY components.json ./
+COPY src/ ./src/
+COPY public/ ./public/
+
+# 构建前端
 RUN npm run build
 
-# ===== Stage 2: 构建后端 + 合并前端 =====
+# ===== Stage 2: 最终镜像 =====
 FROM node:20-alpine
 
 # 安装 Chromium for Puppeteer
@@ -31,14 +44,15 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# 复制后端代码
+# 复制后端依赖文件并安装
 COPY backend/package*.json ./
 RUN npm install --production
 
-COPY backend/ .
+# 复制后端代码
+COPY backend/ ./
 
-# 复制前端构建产物到 public 目录
-COPY --from=frontend-builder /app/dist ./public
+# 从第一阶段复制前端构建产物
+COPY --from=frontend-builder /frontend/dist ./public
 
 EXPOSE 3001
 
