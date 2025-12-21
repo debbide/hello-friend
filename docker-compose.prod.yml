@@ -1,24 +1,8 @@
 version: '3.8'
 
-# 生产环境配置 - 使用 GitHub Container Registry 预构建镜像
-# 使用方法: docker compose -f docker-compose.prod.yml up -d
-
 services:
-  # Frontend web application
-  frontend:
-    image: ghcr.io/debbide/hello-friend-frontend:latest
-    ports:
-      - "3000:80"
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - bot-network
-
-  # Backend API service for RSS parsing and Telegram Bot
-  backend:
-    image: ghcr.io/debbide/hello-friend-backend:latest
+  app:
+    image: ghcr.io/debbide/hello-friend:latest
     ports:
       - "3001:3001"
     restart: unless-stopped
@@ -27,20 +11,12 @@ services:
       - NODE_ENV=production
       - DATA_PATH=/app/data
     volumes:
-      - rss-data:/app/data
-    networks:
-      - bot-network
+      - app-data:/app/data
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health" ]
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:3001/health" ]
       interval: 30s
       timeout: 10s
-      start_period: 15s
       retries: 3
 
-networks:
-  bot-network:
-    driver: bridge
-
 volumes:
-  rss-data:
-    driver: local
+  app-data:

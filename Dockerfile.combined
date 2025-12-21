@@ -1,0 +1,48 @@
+# 合并版 Dockerfile - 前后端一体化镜像
+# 使用多阶段构建减小体积
+
+# ===== Stage 1: 构建前端 =====
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY bun.lockb ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# ===== Stage 2: 构建后端 + 合并前端 =====
+FROM node:20-alpine
+
+# 安装 Chromium for Puppeteer
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+WORKDIR /app
+
+# 复制后端代码
+COPY backend/package*.json ./
+RUN npm install --production
+
+COPY backend/ .
+
+# 复制前端构建产物到 public 目录
+COPY --from=frontend-builder /app/dist ./public
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+
+CMD ["npm", "start"]

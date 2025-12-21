@@ -32,6 +32,14 @@ let scheduler = null;
 app.use(cors());
 app.use(express.json());
 
+// 静态文件服务（合并部署时使用）
+const path = require('path');
+const fs = require('fs');
+const publicPath = path.join(__dirname, 'public');
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+}
+
 // ==================== Web API ====================
 
 // Health check
@@ -293,6 +301,13 @@ async function startBot() {
 // ==================== 主函数 ====================
 
 const PORT = process.env.PORT || 3001;
+
+// SPA fallback - 必须放在所有 API 路由之后
+if (fs.existsSync(publicPath)) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+}
 
 app.listen(PORT, '0.0.0.0', async () => {
   logger.info(`🚀 Backend server running on port ${PORT}`);
