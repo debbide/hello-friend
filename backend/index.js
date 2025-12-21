@@ -74,6 +74,31 @@ app.post('/api/settings', async (req, res) => {
   }
 });
 
+// 重启 Bot
+app.post('/api/restart', async (req, res) => {
+  try {
+    logger.info('🔄 正在重启 Bot...');
+
+    // 停止当前 Bot
+    if (currentBot) {
+      scheduler?.stopAll();
+      await currentBot.stop('RESTART');
+      currentBot = null;
+    }
+
+    // 等待一秒再启动
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 重新启动 Bot
+    await startBot();
+
+    res.json({ success: true, message: 'Bot 重启成功' });
+  } catch (error) {
+    logger.error(`❌ Bot 重启失败: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==================== Auth API ====================
 
 // 默认管理员账号
