@@ -64,9 +64,12 @@ COPY backend/ ./
 # 从第一阶段复制前端构建产物
 COPY --from=frontend-builder /frontend/dist ./public
 
+# 安装 curl 用于健康检查
+RUN apk add --no-cache curl
+
 EXPOSE 3001
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
 
 CMD ["npm", "start"]
