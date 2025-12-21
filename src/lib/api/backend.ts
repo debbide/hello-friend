@@ -86,17 +86,10 @@ export interface BotSettings {
   logLevel?: string;
   autoStart?: boolean;
   notifications?: boolean;
-  // AI 配置
-  ai?: {
-    providerType?: 'official' | 'thirdparty';
-    apiKey?: string;
-    apiUrl?: string;
-    model?: string;
-    systemPrompt?: string;
-    maxTokens?: number;
-    temperature?: number;
-    streamEnabled?: boolean;
-  };
+  // AI 配置 (与后端 settings.js 一致的平级字段)
+  openaiKey?: string;
+  openaiBaseUrl?: string;
+  openaiModel?: string;
 }
 
 export const settingsApi = {

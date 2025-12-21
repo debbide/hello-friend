@@ -56,6 +56,10 @@ const SettingsPage = () => {
     logLevel: "info",
     autoStart: true,
     notifications: true,
+    // AI 配置
+    openaiKey: "",
+    openaiBaseUrl: "https://api.openai.com/v1",
+    openaiModel: "gpt-3.5-turbo",
   });
 
   // 加载设置

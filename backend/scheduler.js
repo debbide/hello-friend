@@ -14,7 +14,7 @@ class RssScheduler {
     this.dataPath = process.env.DATA_PATH || './data';
     this.subscriptionsFile = path.join(this.dataPath, 'subscriptions.json');
     this.seenItemsFile = path.join(this.dataPath, 'seen_items.json');
-    
+
     this.ensureDataDir();
     this.loadSeenItems();
   }
@@ -102,14 +102,14 @@ class RssScheduler {
       lastCheck: null,
       lastError: null,
     };
-    
+
     subscriptions.push(newSub);
     this.saveSubscriptions(subscriptions);
-    
+
     if (newSub.enabled) {
       this.scheduleCheck(newSub);
     }
-    
+
     return newSub;
   }
 
@@ -122,18 +122,18 @@ class RssScheduler {
     if (index === -1) {
       return null;
     }
-    
+
     const oldSub = subscriptions[index];
     const newSub = { ...oldSub, ...updates, id };
     subscriptions[index] = newSub;
     this.saveSubscriptions(subscriptions);
-    
+
     // 重新调度
     this.cancelCheck(id);
     if (newSub.enabled) {
       this.scheduleCheck(newSub);
     }
-    
+
     return newSub;
   }
 
@@ -146,12 +146,12 @@ class RssScheduler {
     if (filtered.length === subscriptions.length) {
       return false;
     }
-    
+
     this.saveSubscriptions(filtered);
     this.cancelCheck(id);
     this.seenItems.delete(id);
     this.saveSeenItems();
-    
+
     return true;
   }
 
@@ -160,18 +160,36 @@ class RssScheduler {
    */
   scheduleCheck(subscription) {
     const intervalMs = (subscription.interval || 30) * 60 * 1000;
-    
+    const subId = subscription.id;
+
     this.logger.info(`⏰ 调度订阅 [${subscription.title}] 每 ${subscription.interval} 分钟检查一次`);
-    
-    // 立即执行一次
-    this.checkFeed(subscription);
-    
-    // 设置定时器
+
+    // 立即执行一次（使用最新配置）
+    this.checkFeedById(subId);
+
+    // 设置定时器 - 每次从文件读取最新配置
     const timer = setInterval(() => {
-      this.checkFeed(subscription);
+      this.checkFeedById(subId);
     }, intervalMs);
-    
-    this.timers.set(subscription.id, timer);
+
+    this.timers.set(subId, timer);
+  }
+
+  /**
+   * 根据 ID 检查 Feed（从文件读取最新配置）
+   */
+  async checkFeedById(id) {
+    const subscription = this.getSubscriptions().find(s => s.id === id);
+    if (!subscription) {
+      this.logger.warn(`⚠️ 订阅 ${id} 不存在，取消检查`);
+      this.cancelCheck(id);
+      return;
+    }
+    if (!subscription.enabled) {
+      this.logger.info(`⏸️ 订阅 [${subscription.title}] 已禁用，跳过检查`);
+      return;
+    }
+    await this.checkFeed(subscription);
   }
 
   /**
@@ -190,28 +208,28 @@ class RssScheduler {
    */
   async checkFeed(subscription) {
     this.logger.info(`🔄 检查订阅: ${subscription.title} (${subscription.url})`);
-    
+
     try {
       const result = await this.parseRssFeed(subscription.url);
-      
+
       if (!result.success) {
         this.updateSubscriptionStatus(subscription.id, null, result.error);
         return;
       }
-      
+
       let items = result.items || [];
-      
+
       // 应用关键词过滤
       if (subscription.keywords) {
         const { whitelist, blacklist } = subscription.keywords;
-        
+
         if (whitelist && whitelist.length > 0) {
           items = items.filter(item => {
             const text = `${item.title} ${item.description} ${item.content}`.toLowerCase();
             return whitelist.some(kw => text.includes(kw.toLowerCase()));
           });
         }
-        
+
         if (blacklist && blacklist.length > 0) {
           items = items.filter(item => {
             const text = `${item.title} ${item.description} ${item.content}`.toLowerCase();
@@ -219,21 +237,21 @@ class RssScheduler {
           });
         }
       }
-      
+
       // 检查新项目
       const seenSet = this.seenItems.get(subscription.id) || new Set();
       const newItems = items.filter(item => !seenSet.has(item.id));
-      
+
       if (newItems.length > 0) {
         this.logger.info(`📰 [${subscription.title}] 发现 ${newItems.length} 条新内容`);
-        
+
         // 标记为已读
         for (const item of newItems) {
           seenSet.add(item.id);
         }
         this.seenItems.set(subscription.id, seenSet);
         this.saveSeenItems();
-        
+
         // 触发回调
         if (this.onNewItems) {
           this.onNewItems(subscription, newItems);
@@ -241,7 +259,7 @@ class RssScheduler {
       } else {
         this.logger.info(`✓ [${subscription.title}] 无新内容`);
       }
-      
+
       this.updateSubscriptionStatus(subscription.id, new Date().toISOString(), null);
     } catch (error) {
       this.logger.error(`❌ 检查订阅失败 [${subscription.title}]: ${error.message}`);
@@ -268,7 +286,7 @@ class RssScheduler {
   startAll() {
     const subscriptions = this.getSubscriptions();
     this.logger.info(`🚀 启动 RSS 调度器，共 ${subscriptions.length} 个订阅`);
-    
+
     for (const sub of subscriptions) {
       if (sub.enabled) {
         this.scheduleCheck(sub);
@@ -293,7 +311,7 @@ class RssScheduler {
   async refreshAll() {
     const subscriptions = this.getSubscriptions();
     this.logger.info(`🔄 手动刷新全部 ${subscriptions.length} 个订阅`);
-    
+
     for (const sub of subscriptions) {
       if (sub.enabled) {
         await this.checkFeed(sub);

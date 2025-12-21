@@ -17,15 +17,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { settingsApi } from "@/lib/api/backend";
-import { 
-  Bot, 
-  Settings, 
-  MessageSquare, 
-  Trash2, 
-  Save, 
-  Eye, 
-  EyeOff, 
-  Sparkles, 
+import {
+  Bot,
+  Settings,
+  MessageSquare,
+  Trash2,
+  Save,
+  Eye,
+  EyeOff,
+  Sparkles,
   Search,
   TrendingUp,
   DollarSign,
@@ -103,17 +103,14 @@ const AIChatPage = () => {
   const loadConfig = async () => {
     setIsLoading(true);
     const result = await settingsApi.get();
-    if (result.success && result.data?.ai) {
+    if (result.success && result.data) {
       setConfig(prev => ({
         ...prev,
-        providerType: result.data!.ai?.providerType || "official",
-        apiKey: result.data!.ai?.apiKey || "",
-        apiUrl: result.data!.ai?.apiUrl || "https://api.openai.com/v1",
-        model: result.data!.ai?.model || "gpt-4o-mini",
-        systemPrompt: result.data!.ai?.systemPrompt || prev.systemPrompt,
-        maxTokens: result.data!.ai?.maxTokens || 2048,
-        temperature: result.data!.ai?.temperature || 0.7,
-        streamEnabled: result.data!.ai?.streamEnabled ?? true,
+        // 从后端平级字段读取（openaiKey, openaiBaseUrl, openaiModel）
+        apiKey: result.data!.openaiKey || "",
+        apiUrl: result.data!.openaiBaseUrl || "https://api.openai.com/v1",
+        model: result.data!.openaiModel || "gpt-4o-mini",
+        providerType: result.data!.openaiBaseUrl && result.data!.openaiBaseUrl !== "https://api.openai.com/v1" ? "thirdparty" : "official",
       }));
     }
     setIsLoading(false);
@@ -121,17 +118,11 @@ const AIChatPage = () => {
 
   const handleSaveConfig = async () => {
     setIsSaving(true);
+    // 保存到后端的平级字段（与 backend/settings.js 和 ai.js 一致）
     const result = await settingsApi.update({
-      ai: {
-        providerType: config.providerType,
-        apiKey: config.apiKey,
-        apiUrl: config.apiUrl,
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        streamEnabled: config.streamEnabled,
-      },
+      openaiKey: config.apiKey,
+      openaiBaseUrl: config.apiUrl,
+      openaiModel: config.model,
     });
     if (result.success) {
       toast.success("配置已保存");
@@ -152,7 +143,7 @@ const AIChatPage = () => {
 
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return chatHistory;
-    return chatHistory.filter(msg => 
+    return chatHistory.filter(msg =>
       msg.content.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [chatHistory, searchQuery]);
