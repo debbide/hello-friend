@@ -6,6 +6,10 @@ const { loadSettings } = require('../settings');
 // 对话历史存储
 const conversationHistory = new Map();
 
+// 活跃会话跟踪（用于无命令连续对话）
+const activeSessions = new Map(); // userId -> { lastActive: timestamp, chatId: number }
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 5分钟超时
+
 // 流式更新配置
 const STREAM_UPDATE_INTERVAL = 800; // 更新间隔(毫秒)
 const TYPING_CHARS = ['▌', '█', '▌', ' ']; // 打字机光标效果
@@ -24,7 +28,7 @@ function setup(bot, { logger }) {
         '<code>/c 内容</code> - 简写命令\n' +
         '<code>/chat clear</code> - 清除记忆\n\n' +
         '💡 支持多轮对话，AI 会记住上下文',
-        { 
+        {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [[
@@ -37,7 +41,8 @@ function setup(bot, { logger }) {
 
     if (text.toLowerCase() === 'clear') {
       conversationHistory.delete(userId);
-      return ctx.reply('✅ 对话历史已清除', {
+      activeSessions.delete(userId); // 同时清除活跃状态
+      return ctx.reply('✅ 对话历史已清除，连续对话已关闭', {
         reply_markup: {
           inline_keyboard: [[
             { text: '💬 开始新对话', callback_data: 'ai_new_chat' }
@@ -52,6 +57,9 @@ function setup(bot, { logger }) {
         { parse_mode: 'HTML' }
       );
     }
+
+    // 激活连续对话会话
+    activeSessions.set(userId, { lastActive: Date.now(), chatId: ctx.chat.id });
 
     // 获取或创建对话历史
     if (!conversationHistory.has(userId)) {
@@ -69,7 +77,7 @@ function setup(bot, { logger }) {
 
     // 发送"思考中"消息
     const loading = await ctx.reply('🤔 <i>思考中...</i>', { parse_mode: 'HTML' });
-    
+
     let fullResponse = '';
     let lastUpdateTime = 0;
     let cursorIndex = 0;
@@ -123,7 +131,7 @@ function setup(bot, { logger }) {
                 if (now - lastUpdateTime > STREAM_UPDATE_INTERVAL) {
                   lastUpdateTime = now;
                   cursorIndex = (cursorIndex + 1) % TYPING_CHARS.length;
-                  
+
                   try {
                     await ctx.telegram.editMessageText(
                       ctx.chat.id,
@@ -147,13 +155,13 @@ function setup(bot, { logger }) {
       // 最终更新
       if (fullResponse) {
         history.push({ role: 'assistant', content: fullResponse });
-        
+
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           loading.message_id,
           null,
           `🤖 ${fullResponse}`,
-          { 
+          {
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [[
@@ -192,7 +200,7 @@ function setup(bot, { logger }) {
           ]]
         }
       });
-    } catch (e) {}
+    } catch (e) { }
   });
 
   // 空操作
@@ -278,7 +286,169 @@ function setup(bot, { logger }) {
     }
   });
 
-  logger.info('🤖 AI 命令已加载');
+  // ========== 无命令连续对话 ==========
+  // 处理普通文本消息（非命令）
+  const handleContinuousChat = async (ctx, text) => {
+    const settings = loadSettings();
+    const userId = ctx.from.id.toString();
+
+    if (!settings.openaiKey) {
+      return; // 未配置 AI，静默忽略
+    }
+
+    // 更新活跃状态
+    activeSessions.set(userId, { lastActive: Date.now(), chatId: ctx.chat.id });
+
+    // 获取或创建对话历史
+    if (!conversationHistory.has(userId)) {
+      conversationHistory.set(userId, []);
+    }
+    const history = conversationHistory.get(userId);
+
+    // 添加用户消息
+    history.push({ role: 'user', content: text });
+
+    // 保留最近 10 轮对话
+    while (history.length > 20) {
+      history.shift();
+    }
+
+    // 发送"思考中"消息
+    const loading = await ctx.reply('🤔 思考中...', { parse_mode: 'HTML' });
+
+    let fullResponse = '';
+    let lastUpdateTime = 0;
+    let cursorIndex = 0;
+
+    try {
+      const response = await fetch(`${settings.openaiBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: settings.openaiModel || 'gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: '你是一个有帮助的助手，用中文回复。回答要简洁有条理。' },
+            ...history,
+          ],
+          max_tokens: 2000,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                fullResponse += content;
+
+                const now = Date.now();
+                if (now - lastUpdateTime > STREAM_UPDATE_INTERVAL) {
+                  lastUpdateTime = now;
+                  cursorIndex = (cursorIndex + 1) % TYPING_CHARS.length;
+
+                  try {
+                    await ctx.telegram.editMessageText(
+                      ctx.chat.id,
+                      loading.message_id,
+                      null,
+                      `🤖 ${fullResponse}${TYPING_CHARS[cursorIndex]}`,
+                      { parse_mode: 'Markdown' }
+                    );
+                  } catch (e) { }
+                }
+              }
+            } catch (e) { }
+          }
+        }
+      }
+
+      // 最终更新
+      if (fullResponse) {
+        history.push({ role: 'assistant', content: fullResponse });
+
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          loading.message_id,
+          null,
+          `🤖 ${fullResponse}`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+                { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
+              ]]
+            }
+          }
+        );
+      }
+    } catch (error) {
+      logger.error(`AI 请求失败: ${error.message}`);
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        loading.message_id,
+        null,
+        `❌ 请求失败: ${error.message}`,
+        { parse_mode: 'HTML' }
+      );
+    }
+  };
+
+  // 监听普通文本消息
+  bot.on('text', async (ctx, next) => {
+    const text = ctx.message.text;
+    const userId = ctx.from.id.toString();
+
+    // 跳过命令
+    if (text.startsWith('/')) {
+      return next();
+    }
+
+    // 检查是否在活跃会话中
+    const session = activeSessions.get(userId);
+    if (session && (Date.now() - session.lastActive) < SESSION_TIMEOUT) {
+      // 在活跃会话中，处理为 AI 对话
+      await handleContinuousChat(ctx, text);
+    } else {
+      // 不在活跃会话中，传递给下一个处理器
+      return next();
+    }
+  });
+
+  // 结束会话按钮回调
+  bot.action('ai_end_session', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    activeSessions.delete(userId);
+    await ctx.answerCbQuery('✅ 连续对话已结束');
+    try {
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    } catch (e) { }
+  });
+
+  logger.info('🤖 AI 命令已加载（支持无命令连续对话）');
 }
 
 module.exports = { setup };
