@@ -1,9 +1,24 @@
 /**
  * 命令加载器 - 动态加载所有命令模块
  */
+const storage = require('../storage');
 
 function loadCommands(bot, ctx) {
   const { isAdmin, scheduler, logger, settings } = ctx;
+
+  // 添加命令统计中间件 - 在所有命令处理前执行
+  bot.use((ctx, next) => {
+    if (ctx.message?.text) {
+      const text = ctx.message.text;
+      // 检测是否为命令
+      if (text.startsWith('/')) {
+        const command = text.split(' ')[0].split('@')[0]; // /rss@botname -> /rss
+        storage.incrementCommand(command);
+        storage.addLog('info', `命令执行: ${command}`, 'command');
+      }
+    }
+    return next();
+  });
 
   // 加载各命令模块
   require('./start').setup(bot, ctx);
