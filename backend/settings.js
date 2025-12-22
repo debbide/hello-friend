@@ -22,6 +22,8 @@ const DEFAULT_SETTINGS = {
   notifications: true,
   rss: {
     checkInterval: 30, // 默认检查间隔(分钟)
+    customBotToken: '', // 全局自定义 Bot Token
+    customChatId: '',   // 全局自定义推送目标
   },
   features: {
     ai: true,

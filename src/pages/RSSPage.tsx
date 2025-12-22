@@ -30,7 +30,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
-import { subscriptionsApi, Subscription } from "@/lib/api/backend";
+import { subscriptionsApi, settingsApi, Subscription } from "@/lib/api/backend";
 import { rssApi, FeedItem } from "@/lib/api/rss";
 import {
   Rss,
@@ -155,16 +155,31 @@ const RSSPage = () => {
     quietStart: "22:00",
     quietEnd: "08:00",
     quietEnabled: false,
-    customBotToken: "",  // 自定义 Bot Token
-    customChatId: "",    // 自定义推送目标
+    useCustomPush: false,   // 是否启用独立推送配置
+    customBotToken: "",
+    customChatId: "",
   });
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["tech", "news", "dev"]);
   const [activeTab, setActiveTab] = useState("feeds");
+  // 全局推送设置
+  const [isGlobalSettingsOpen, setIsGlobalSettingsOpen] = useState(false);
+  const [globalRssConfig, setGlobalRssConfig] = useState({ customBotToken: "", customChatId: "" });
 
   // 加载订阅数据
   useEffect(() => {
     loadFeeds();
+    loadGlobalSettings();
   }, []);
+
+  const loadGlobalSettings = async () => {
+    const result = await settingsApi.get();
+    if (result.success && result.data?.rss) {
+      setGlobalRssConfig({
+        customBotToken: result.data.rss.customBotToken || "",
+        customChatId: result.data.rss.customChatId || "",
+      });
+    }
+  };
 
   const loadFeeds = async () => {
     setIsLoading(true);
@@ -198,6 +213,7 @@ const RSSPage = () => {
       url: newFeed.url,
       interval: newFeed.interval,
       enabled: newFeed.pushEnabled,
+      useCustomPush: newFeed.useCustomPush || undefined,
       customBotToken: newFeed.customBotToken || undefined,
       customChatId: newFeed.customChatId || undefined,
       keywords: {
@@ -212,7 +228,7 @@ const RSSPage = () => {
         title: "", url: "", interval: 30, groupId: "tech",
         whitelist: "", blacklist: "", pushEnabled: true,
         quietStart: "22:00", quietEnd: "08:00", quietEnabled: false,
-        customBotToken: "", customChatId: "",
+        useCustomPush: false, customBotToken: "", customChatId: "",
       });
       setIsAddDialogOpen(false);
       toast.success("订阅添加成功");
@@ -420,6 +436,91 @@ const RSSPage = () => {
             <RefreshCw className="w-4 h-4" />
             全部刷新
           </Button>
+          {/* 全局推送设置对话框 */}
+          <Dialog open={isGlobalSettingsOpen} onOpenChange={setIsGlobalSettingsOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Settings className="w-4 h-4" />
+                推送设置
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>全局推送设置</DialogTitle>
+                <DialogDescription>
+                  配置 RSS 推送使用的 Bot 和目标，所有订阅共用
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>自定义 Bot Token</Label>
+                  <Input
+                    type="password"
+                    placeholder="留空使用系统默认 Bot"
+                    value={globalRssConfig.customBotToken}
+                    onChange={(e) => setGlobalRssConfig({ ...globalRssConfig, customBotToken: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">使用其他 Bot 推送所有 RSS 更新</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>自定义推送目标</Label>
+                  <Input
+                    placeholder="Chat ID / 群组 ID / @频道名"
+                    value={globalRssConfig.customChatId}
+                    onChange={(e) => setGlobalRssConfig({ ...globalRssConfig, customChatId: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">推送到指定用户、群组或频道</p>
+                </div>
+                {(globalRssConfig.customBotToken || globalRssConfig.customChatId) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            botToken: globalRssConfig.customBotToken || undefined,
+                            chatId: globalRssConfig.customChatId || undefined,
+                          }),
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                          toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
+                        } else {
+                          toast.error(`❌ 验证失败: ${result.error}`);
+                        }
+                      } catch (e: unknown) {
+                        toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
+                      }
+                    }}
+                  >
+                    🧪 测试配置
+                  </Button>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsGlobalSettingsOpen(false)}>取消</Button>
+                <Button onClick={async () => {
+                  const result = await settingsApi.update({
+                    rss: {
+                      customBotToken: globalRssConfig.customBotToken,
+                      customChatId: globalRssConfig.customChatId,
+                    }
+                  });
+                  if (result.success) {
+                    toast.success("全局推送设置已保存");
+                    setIsGlobalSettingsOpen(false);
+                  } else {
+                    toast.error("保存失败");
+                  }
+                }}>保存</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
@@ -581,64 +682,73 @@ const RSSPage = () => {
                     )}
                   </div>
 
-                  {/* 高级推送设置 */}
+                  {/* 高级推送设置 - 开关模式 */}
                   <div className="space-y-3 pt-4 border-t">
-                    <Label className="flex items-center gap-2">
-                      <Settings className="w-4 h-4" />
-                      高级推送设置（可选）
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      配置后使用自定义 Bot 推送，不配置则使用系统默认
-                    </p>
-                    <div className="space-y-2">
-                      <Label className="text-xs">自定义 Bot Token</Label>
-                      <Input
-                        type="password"
-                        placeholder="留空使用系统默认 Bot"
-                        value={newFeed.customBotToken}
-                        onChange={(e) => setNewFeed({ ...newFeed, customBotToken: e.target.value })}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="flex items-center gap-2">
+                          <Settings className="w-4 h-4" />
+                          使用独立推送配置
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          开启后此订阅使用独立 Bot 推送，优先于全局设置
+                        </p>
+                      </div>
+                      <Switch
+                        checked={newFeed.useCustomPush}
+                        onCheckedChange={(checked) => setNewFeed({ ...newFeed, useCustomPush: checked })}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">自定义推送目标</Label>
-                      <Input
-                        placeholder="Chat ID / 群组 ID / @频道名"
-                        value={newFeed.customChatId}
-                        onChange={(e) => setNewFeed({ ...newFeed, customChatId: e.target.value })}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        推送到指定用户、群组或频道
-                      </p>
-                    </div>
-                    {(newFeed.customBotToken || newFeed.customChatId) && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={async () => {
-                          try {
-                            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                botToken: newFeed.customBotToken || undefined,
-                                chatId: newFeed.customChatId || undefined,
-                              }),
-                            });
-                            const result = await response.json();
-                            if (result.success) {
-                              toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
-                            } else {
-                              toast.error(`❌ 验证失败: ${result.error}`);
-                            }
-                          } catch (e: unknown) {
-                            toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
-                          }
-                        }}
-                      >
-                        🧪 测试配置
-                      </Button>
+                    {newFeed.useCustomPush && (
+                      <div className="space-y-3 pl-4 border-l-2">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Bot Token</Label>
+                          <Input
+                            type="password"
+                            placeholder="此订阅专用的 Bot Token"
+                            value={newFeed.customBotToken}
+                            onChange={(e) => setNewFeed({ ...newFeed, customBotToken: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">推送目标</Label>
+                          <Input
+                            placeholder="Chat ID / 群组 ID / @频道名"
+                            value={newFeed.customChatId}
+                            onChange={(e) => setNewFeed({ ...newFeed, customChatId: e.target.value })}
+                          />
+                        </div>
+                        {(newFeed.customBotToken || newFeed.customChatId) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    botToken: newFeed.customBotToken || undefined,
+                                    chatId: newFeed.customChatId || undefined,
+                                  }),
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                  toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
+                                } else {
+                                  toast.error(`❌ 验证失败: ${result.error}`);
+                                }
+                              } catch (e: unknown) {
+                                toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
+                              }
+                            }}
+                          >
+                            🧪 测试配置
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

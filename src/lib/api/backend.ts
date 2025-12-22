@@ -90,6 +90,12 @@ export interface BotSettings {
   openaiKey?: string;
   openaiBaseUrl?: string;
   openaiModel?: string;
+  // RSS 全局配置
+  rss?: {
+    checkInterval?: number;
+    customBotToken?: string;
+    customChatId?: string;
+  };
 }
 
 export const settingsApi = {
@@ -137,8 +143,9 @@ export interface Subscription {
   enabled: boolean;
   chatId?: string;
   userId?: string;
-  customBotToken?: string;  // 可选：自定义 Bot Token
-  customChatId?: string;    // 可选：自定义推送目标
+  useCustomPush?: boolean;  // 是否使用独立推送配置
+  customBotToken?: string;  // 可选：独立 Bot Token
+  customChatId?: string;    // 可选：独立推送目标
   keywords?: {
     whitelist: string[];
     blacklist: string[];

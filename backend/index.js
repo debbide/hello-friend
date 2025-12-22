@@ -611,8 +611,31 @@ async function startBot() {
 
   // 初始化调度器
   scheduler = new RssScheduler(parseRssFeed, logger, async (subscription, newItems) => {
-    // 确定推送目标 Chat ID（优先使用自定义配置）
-    const targetChatId = subscription.customChatId || subscription.chatId;
+    const currentSettings = loadSettings();
+    const globalRss = currentSettings.rss || {};
+
+    // 优先级：订阅独立配置（需开启 useCustomPush）> 全局 RSS 配置 > 系统默认
+    let targetToken = null;
+    let targetChatId = null;
+    let botLabel = '系统 Bot';
+
+    // 1. 检查订阅是否启用独立配置
+    if (subscription.useCustomPush && subscription.customBotToken) {
+      targetToken = subscription.customBotToken;
+      targetChatId = subscription.customChatId || subscription.chatId;
+      botLabel = '订阅独立 Bot';
+    }
+    // 2. 检查全局 RSS 配置
+    else if (globalRss.customBotToken) {
+      targetToken = globalRss.customBotToken;
+      targetChatId = globalRss.customChatId || subscription.chatId;
+      botLabel = '全局 RSS Bot';
+    }
+    // 3. 使用系统默认
+    else {
+      targetChatId = subscription.chatId;
+    }
+
     if (!targetChatId) {
       logger.warn(`[${subscription.title}] 无推送目标，跳过`);
       return;
@@ -620,17 +643,14 @@ async function startBot() {
 
     // 确定使用哪个 Telegram API
     let telegramApi;
-    let botLabel = '系统 Bot';
 
-    if (subscription.customBotToken) {
-      // 使用自定义 Bot Token
+    if (targetToken) {
       try {
-        const tempBot = new Telegraf(subscription.customBotToken);
+        const tempBot = new Telegraf(targetToken);
         telegramApi = tempBot.telegram;
-        botLabel = '自定义 Bot';
       } catch (e) {
-        logger.error(`[${subscription.title}] 自定义 Bot Token 无效: ${e.message}`);
-        storage.addLog('error', `自定义 Bot Token 无效: ${e.message}`, 'rss');
+        logger.error(`[${subscription.title}] Bot Token 无效: ${e.message}`);
+        storage.addLog('error', `${botLabel} Token 无效: ${e.message}`, 'rss');
         return;
       }
     } else if (currentBot) {
