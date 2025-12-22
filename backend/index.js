@@ -261,9 +261,56 @@ app.post('/api/subscriptions/refresh', async (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/subscriptions/:id/refresh', async (req, res) => {
+  try {
+    await scheduler?.refreshSubscription(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(404).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/subscriptions/history', (req, res) => {
   const history = scheduler?.getNewItemsHistory() || [];
   res.json({ success: true, data: history });
+});
+
+// ==================== Message API ====================
+
+app.post('/api/send', async (req, res) => {
+  try {
+    const { chatId, text } = req.body;
+    if (!chatId || !text) {
+      return res.status(400).json({ success: false, error: '缺少 chatId 或 text' });
+    }
+    if (!currentBot) {
+      return res.status(503).json({ success: false, error: 'Bot 未连接' });
+    }
+    const result = await currentBot.telegram.sendMessage(chatId, text, { parse_mode: 'HTML' });
+    res.json({ success: true, messageId: result.message_id });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/send/admin', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const settings = loadSettings();
+    if (!text) {
+      return res.status(400).json({ success: false, error: '消息内容不能为空' });
+    }
+    if (!settings.adminId) {
+      return res.status(400).json({ success: false, error: '未配置管理员 ID' });
+    }
+    if (!currentBot) {
+      return res.status(503).json({ success: false, error: 'Bot 未连接' });
+    }
+    const result = await currentBot.telegram.sendMessage(settings.adminId, text, { parse_mode: 'HTML' });
+    res.json({ success: true, messageId: result.message_id });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ==================== Stats API ====================
@@ -405,6 +452,12 @@ app.post('/api/tools/:id/toggle', (req, res) => {
     return res.status(404).json({ success: false, error: '工具不存在' });
   }
   res.json({ success: true, data: tool });
+});
+
+app.get('/api/tools/stats', (req, res) => {
+  const tools = storage.getTools();
+  const stats = tools.map(t => ({ command: t.command, count: t.usage || 0 }));
+  res.json({ success: true, data: stats });
 });
 
 // ==================== Reminders API ====================
