@@ -99,6 +99,8 @@ class RssScheduler {
       keywords: subscription.keywords || { whitelist: [], blacklist: [] },
       enabled: subscription.enabled !== false,
       chatId: subscription.chatId || null, // 推送目标
+      userId: subscription.userId || null, // 用户 ID
+      isFirstCheck: true, // 标记首次检查，用于避免刷屏
       createdAt: new Date().toISOString(),
       lastCheck: null,
       lastError: null,
@@ -244,8 +246,6 @@ class RssScheduler {
       const newItems = items.filter(item => !seenSet.has(item.id));
 
       if (newItems.length > 0) {
-        this.logger.info(`📰 [${subscription.title}] 发现 ${newItems.length} 条新内容`);
-
         // 标记为已读
         for (const item of newItems) {
           seenSet.add(item.id);
@@ -253,12 +253,24 @@ class RssScheduler {
         this.seenItems.set(subscription.id, seenSet);
         this.saveSeenItems();
 
-        // 触发回调
-        if (this.onNewItems) {
-          this.onNewItems(subscription, newItems);
+        // 首次检查时只标记不推送，避免刷屏
+        if (subscription.isFirstCheck) {
+          this.logger.info(`🆕 [${subscription.title}] 首次检查，标记 ${newItems.length} 条已读（不推送）`);
+          // 清除首次检查标志
+          this.updateSubscription(subscription.id, { isFirstCheck: false });
+        } else {
+          this.logger.info(`📰 [${subscription.title}] 发现 ${newItems.length} 条新内容`);
+          // 触发回调推送
+          if (this.onNewItems) {
+            this.onNewItems(subscription, newItems);
+          }
         }
       } else {
         this.logger.info(`✓ [${subscription.title}] 无新内容`);
+        // 首次检查完成后也要清除标志
+        if (subscription.isFirstCheck) {
+          this.updateSubscription(subscription.id, { isFirstCheck: false });
+        }
       }
 
       this.updateSubscriptionStatus(subscription.id, new Date().toISOString(), null);
