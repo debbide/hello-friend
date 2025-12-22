@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const storage = require('./storage');
 
 class RssScheduler {
   constructor(parseRssFeed, logger, onNewItems) {
@@ -111,6 +112,9 @@ class RssScheduler {
 
     subscriptions.push(newSub);
     this.saveSubscriptions(subscriptions);
+
+    this.logger.info(`✅ 添加订阅 [${newSub.title}] URL: ${newSub.url}`);
+    storage.addLog('info', `添加订阅: ${newSub.title} (${newSub.url})`, 'rss');
 
     if (newSub.enabled) {
       this.scheduleCheck(newSub);
@@ -259,10 +263,12 @@ class RssScheduler {
         // 首次检查时只标记不推送，避免刷屏
         if (subscription.isFirstCheck) {
           this.logger.info(`🆕 [${subscription.title}] 首次检查，标记 ${newItems.length} 条已读（不推送）`);
+          storage.addLog('info', `[${subscription.title}] 首次检查，标记 ${newItems.length} 条已读`, 'rss');
           // 清除首次检查标志
           this.updateSubscription(subscription.id, { isFirstCheck: false });
         } else {
           this.logger.info(`📰 [${subscription.title}] 发现 ${newItems.length} 条新内容`);
+          storage.addLog('info', `[${subscription.title}] 发现 ${newItems.length} 条新内容`, 'rss');
           // 触发回调推送
           if (this.onNewItems) {
             this.onNewItems(subscription, newItems);
@@ -272,6 +278,7 @@ class RssScheduler {
         this.logger.info(`✓ [${subscription.title}] 无新内容`);
         // 首次检查完成后也要清除标志
         if (subscription.isFirstCheck) {
+          storage.addLog('info', `[${subscription.title}] 首次检查完成，无新内容`, 'rss');
           this.updateSubscription(subscription.id, { isFirstCheck: false });
         }
       }
@@ -279,6 +286,7 @@ class RssScheduler {
       this.updateSubscriptionStatus(subscription.id, new Date().toISOString(), null);
     } catch (error) {
       this.logger.error(`❌ 检查订阅失败 [${subscription.title}]: ${error.message}`);
+      storage.addLog('error', `[${subscription.title}] 检查失败: ${error.message}`, 'rss');
       this.updateSubscriptionStatus(subscription.id, null, error.message);
     }
   }
