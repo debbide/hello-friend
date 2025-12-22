@@ -137,6 +137,8 @@ export interface Subscription {
   enabled: boolean;
   chatId?: string;
   userId?: string;
+  customBotToken?: string;  // 可选：自定义 Bot Token
+  customChatId?: string;    // 可选：自定义推送目标
   keywords?: {
     whitelist: string[];
     blacklist: string[];

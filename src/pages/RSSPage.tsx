@@ -32,15 +32,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { subscriptionsApi, Subscription } from "@/lib/api/backend";
 import { rssApi, FeedItem } from "@/lib/api/rss";
-import { 
-  Rss, 
-  Plus, 
-  RefreshCw, 
-  Trash2, 
-  Clock, 
-  Filter, 
-  ExternalLink, 
-  AlertCircle, 
+import {
+  Rss,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Clock,
+  Filter,
+  ExternalLink,
+  AlertCircle,
   CheckCircle,
   Settings,
   ChevronDown,
@@ -142,9 +142,9 @@ const RSSPage = () => {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingArticles, setIsLoadingArticles] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-  const [newFeed, setNewFeed] = useState({ 
-    title: "", 
-    url: "", 
+  const [newFeed, setNewFeed] = useState({
+    title: "",
+    url: "",
     interval: 30,
     groupId: "tech",
     whitelist: "",
@@ -153,6 +153,8 @@ const RSSPage = () => {
     quietStart: "22:00",
     quietEnd: "08:00",
     quietEnabled: false,
+    customBotToken: "",  // 自定义 Bot Token
+    customChatId: "",    // 自定义推送目标
   });
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["tech", "news", "dev"]);
   const [activeTab, setActiveTab] = useState("feeds");
@@ -188,12 +190,14 @@ const RSSPage = () => {
       toast.error("请填写完整信息");
       return;
     }
-    
+
     const result = await subscriptionsApi.create({
       title: newFeed.title,
       url: newFeed.url,
       interval: newFeed.interval,
       enabled: newFeed.pushEnabled,
+      customBotToken: newFeed.customBotToken || undefined,
+      customChatId: newFeed.customChatId || undefined,
       keywords: {
         whitelist: newFeed.whitelist.split(/[,，\n]/).map(s => s.trim()).filter(Boolean),
         blacklist: newFeed.blacklist.split(/[,，\n]/).map(s => s.trim()).filter(Boolean),
@@ -202,10 +206,11 @@ const RSSPage = () => {
 
     if (result.success) {
       await loadFeeds();
-      setNewFeed({ 
-        title: "", url: "", interval: 30, groupId: "tech", 
+      setNewFeed({
+        title: "", url: "", interval: 30, groupId: "tech",
         whitelist: "", blacklist: "", pushEnabled: true,
         quietStart: "22:00", quietEnd: "08:00", quietEnabled: false,
+        customBotToken: "", customChatId: "",
       });
       setIsAddDialogOpen(false);
       toast.success("订阅添加成功");
@@ -216,7 +221,7 @@ const RSSPage = () => {
 
   const handleUpdateFeed = async () => {
     if (!selectedFeed) return;
-    
+
     const result = await subscriptionsApi.update(selectedFeed.id, {
       title: selectedFeed.title,
       url: selectedFeed.url,
@@ -237,13 +242,13 @@ const RSSPage = () => {
   const handleToggleFeed = async (id: string) => {
     const feed = feeds.find(f => f.id === id);
     if (!feed) return;
-    
+
     const newEnabled = feed.status === "paused";
     const result = await subscriptionsApi.update(id, { enabled: newEnabled });
-    
+
     if (result.success) {
-      setFeeds(feeds.map(f => 
-        f.id === id 
+      setFeeds(feeds.map(f =>
+        f.id === id
           ? { ...f, status: newEnabled ? "active" : "paused" as "active" | "paused", pushEnabled: newEnabled }
           : f
       ));
@@ -264,9 +269,9 @@ const RSSPage = () => {
 
   const handleRefreshFeed = async (id: string) => {
     toast.info("正在刷新订阅...");
-    
+
     const result = await subscriptionsApi.refresh(id);
-    
+
     if (result.success) {
       await loadFeeds();
       toast.success("刷新成功");
@@ -277,9 +282,9 @@ const RSSPage = () => {
 
   const handleRefreshAll = async () => {
     toast.info("正在刷新全部订阅...");
-    
+
     const result = await subscriptionsApi.refresh();
-    
+
     if (result.success) {
       await loadFeeds();
       toast.success("全部订阅刷新完成");
@@ -291,7 +296,7 @@ const RSSPage = () => {
   const loadAllArticles = async () => {
     setIsLoadingArticles(true);
     const allItems: FeedItem[] = [];
-    
+
     for (const feed of feeds.filter(f => f.status === "active")) {
       const result = await rssApi.parse(feed.url, feed.keywords);
       if (result.success && result.data) {
@@ -301,7 +306,7 @@ const RSSPage = () => {
         } as FeedItem)));
       }
     }
-    
+
     // Sort by date, newest first
     allItems.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
     setAllArticles(allItems);
@@ -309,8 +314,8 @@ const RSSPage = () => {
   };
 
   const toggleGroup = (groupId: string) => {
-    setExpandedGroups(prev => 
-      prev.includes(groupId) 
+    setExpandedGroups(prev =>
+      prev.includes(groupId)
         ? prev.filter(id => id !== groupId)
         : [...prev, groupId]
     );
@@ -328,22 +333,22 @@ const RSSPage = () => {
     setPreviewArticles([]);
 
     const result = await rssApi.parse(feed.url, feed.keywords);
-    
+
     if (result.success && result.data) {
       setPreviewArticles(result.data.items);
     } else {
       toast.error(result.error || "加载内容失败");
     }
-    
+
     setIsLoadingPreview(false);
   };
 
   const validateFeedUrl = async () => {
     if (!newFeed.url) return;
-    
+
     setIsValidating(true);
     const result = await rssApi.validate(newFeed.url);
-    
+
     if (result.valid) {
       toast.success(`验证成功: ${result.title}`);
       if (!newFeed.title && result.title) {
@@ -352,7 +357,7 @@ const RSSPage = () => {
     } else {
       toast.error(result.error || "无效的 RSS 地址");
     }
-    
+
     setIsValidating(false);
   };
 
@@ -445,9 +450,9 @@ const RSSPage = () => {
                           placeholder="https://sspai.com/feed"
                           className="flex-1"
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={validateFeedUrl}
                           disabled={!newFeed.url || isValidating}
                         >
@@ -568,6 +573,37 @@ const RSSPage = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* 高级推送设置 */}
+                  <div className="space-y-3 pt-4 border-t">
+                    <Label className="flex items-center gap-2">
+                      <Settings className="w-4 h-4" />
+                      高级推送设置（可选）
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      配置后使用自定义 Bot 推送，不配置则使用系统默认
+                    </p>
+                    <div className="space-y-2">
+                      <Label className="text-xs">自定义 Bot Token</Label>
+                      <Input
+                        type="password"
+                        placeholder="留空使用系统默认 Bot"
+                        value={newFeed.customBotToken}
+                        onChange={(e) => setNewFeed({ ...newFeed, customBotToken: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">自定义推送目标</Label>
+                      <Input
+                        placeholder="Chat ID / 群组 ID / @频道名"
+                        value={newFeed.customChatId}
+                        onChange={(e) => setNewFeed({ ...newFeed, customChatId: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        推送到指定用户、群组或频道
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </ScrollArea>
               <DialogFooter>
@@ -600,8 +636,8 @@ const RSSPage = () => {
         {/* 订阅源列表 */}
         <TabsContent value="feeds" className="mt-6 space-y-4">
           {feedsByGroup.map(group => (
-            <Collapsible 
-              key={group.id} 
+            <Collapsible
+              key={group.id}
               open={expandedGroups.includes(group.id)}
               onOpenChange={() => toggleGroup(group.id)}
             >
@@ -612,18 +648,17 @@ const RSSPage = () => {
                   ) : (
                     <ChevronRight className="w-4 h-4" />
                   )}
-                  <span className={`w-3 h-3 rounded-full ${
-                    group.color === "blue" ? "bg-blue-500" :
-                    group.color === "green" ? "bg-green-500" : "bg-purple-500"
-                  }`} />
+                  <span className={`w-3 h-3 rounded-full ${group.color === "blue" ? "bg-blue-500" :
+                      group.color === "green" ? "bg-green-500" : "bg-purple-500"
+                    }`} />
                   <span className="font-medium">{group.name}</span>
                   <Badge variant="secondary" className="ml-2">{group.feeds.length}</Badge>
                 </div>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-3 mt-3">
                 {group.feeds.map((feed) => (
-                  <FeedCard 
-                    key={feed.id} 
+                  <FeedCard
+                    key={feed.id}
                     feed={feed}
                     onToggle={handleToggleFeed}
                     onRefresh={handleRefreshFeed}
@@ -648,8 +683,8 @@ const RSSPage = () => {
                 <Badge variant="secondary" className="ml-2">{ungroupedFeeds.length}</Badge>
               </div>
               {ungroupedFeeds.map((feed) => (
-                <FeedCard 
-                  key={feed.id} 
+                <FeedCard
+                  key={feed.id}
                   feed={feed}
                   onToggle={handleToggleFeed}
                   onRefresh={handleRefreshFeed}
@@ -681,9 +716,9 @@ const RSSPage = () => {
                 <FileText className="w-4 h-4" />
                 最新文章
               </CardTitle>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={loadAllArticles}
                 disabled={isLoadingArticles}
                 className="gap-2"
@@ -712,7 +747,7 @@ const RSSPage = () => {
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-3 pr-4">
                     {allArticles.map((article) => (
-                      <a 
+                      <a
                         key={article.id}
                         href={article.link}
                         target="_blank"
@@ -764,10 +799,9 @@ const RSSPage = () => {
                 {groups.map((group) => (
                   <div key={group.id} className="flex items-center justify-between p-4 rounded-lg border">
                     <div className="flex items-center gap-3">
-                      <span className={`w-4 h-4 rounded-full ${
-                        group.color === "blue" ? "bg-blue-500" :
-                        group.color === "green" ? "bg-green-500" : "bg-purple-500"
-                      }`} />
+                      <span className={`w-4 h-4 rounded-full ${group.color === "blue" ? "bg-blue-500" :
+                          group.color === "green" ? "bg-green-500" : "bg-purple-500"
+                        }`} />
                       <span className="font-medium">{group.name}</span>
                       <Badge variant="secondary">
                         {feeds.filter(f => f.groupId === group.id).length} 个订阅
@@ -827,8 +861,8 @@ const RSSPage = () => {
                   </div>
                   <div className="space-y-2">
                     <Label>分组</Label>
-                    <Select 
-                      value={selectedFeed.groupId || ""} 
+                    <Select
+                      value={selectedFeed.groupId || ""}
                       onValueChange={(v) => setSelectedFeed({ ...selectedFeed, groupId: v })}
                     >
                       <SelectTrigger>
@@ -853,10 +887,10 @@ const RSSPage = () => {
                     <Label className="text-xs text-muted-foreground">白名单</Label>
                     <Textarea
                       value={selectedFeed.keywords.whitelist.join(", ")}
-                      onChange={(e) => setSelectedFeed({ 
-                        ...selectedFeed, 
-                        keywords: { 
-                          ...selectedFeed.keywords, 
+                      onChange={(e) => setSelectedFeed({
+                        ...selectedFeed,
+                        keywords: {
+                          ...selectedFeed.keywords,
                           whitelist: e.target.value.split(/[,，\n]/).map(s => s.trim()).filter(Boolean)
                         }
                       })}
@@ -868,10 +902,10 @@ const RSSPage = () => {
                     <Label className="text-xs text-muted-foreground">黑名单</Label>
                     <Textarea
                       value={selectedFeed.keywords.blacklist.join(", ")}
-                      onChange={(e) => setSelectedFeed({ 
-                        ...selectedFeed, 
-                        keywords: { 
-                          ...selectedFeed.keywords, 
+                      onChange={(e) => setSelectedFeed({
+                        ...selectedFeed,
+                        keywords: {
+                          ...selectedFeed.keywords,
                           blacklist: e.target.value.split(/[,，\n]/).map(s => s.trim()).filter(Boolean)
                         }
                       })}
@@ -902,10 +936,10 @@ const RSSPage = () => {
                     </div>
                     <Switch
                       checked={selectedFeed.quietHours?.enabled ?? false}
-                      onCheckedChange={(checked) => setSelectedFeed({ 
-                        ...selectedFeed, 
-                        quietHours: { 
-                          enabled: checked, 
+                      onCheckedChange={(checked) => setSelectedFeed({
+                        ...selectedFeed,
+                        quietHours: {
+                          enabled: checked,
                           start: selectedFeed.quietHours?.start || "22:00",
                           end: selectedFeed.quietHours?.end || "08:00"
                         }
@@ -919,8 +953,8 @@ const RSSPage = () => {
                         <Input
                           type="time"
                           value={selectedFeed.quietHours.start}
-                          onChange={(e) => setSelectedFeed({ 
-                            ...selectedFeed, 
+                          onChange={(e) => setSelectedFeed({
+                            ...selectedFeed,
                             quietHours: { ...selectedFeed.quietHours!, start: e.target.value }
                           })}
                         />
@@ -930,8 +964,8 @@ const RSSPage = () => {
                         <Input
                           type="time"
                           value={selectedFeed.quietHours.end}
-                          onChange={(e) => setSelectedFeed({ 
-                            ...selectedFeed, 
+                          onChange={(e) => setSelectedFeed({
+                            ...selectedFeed,
                             quietHours: { ...selectedFeed.quietHours!, end: e.target.value }
                           })}
                         />
@@ -972,8 +1006,8 @@ const RSSPage = () => {
                 </div>
               ) : previewArticles.length > 0 ? (
                 previewArticles.map((article) => (
-                  <a 
-                    key={article.id} 
+                  <a
+                    key={article.id}
                     href={article.link}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1007,7 +1041,7 @@ const RSSPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 };
 
@@ -1028,20 +1062,18 @@ const FeedCard = ({ feed, onToggle, onRefresh, onDelete, onEdit, onPreview, getS
       <CardContent className="p-5">
         <div className="flex items-start gap-4">
           {/* Icon */}
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            feed.status === "error" 
-              ? "bg-red-500/10" 
-              : feed.status === "paused" 
-                ? "bg-muted" 
-                : "bg-primary/10"
-          }`}>
-            <Rss className={`w-6 h-6 ${
-              feed.status === "error" 
-                ? "text-red-500" 
-                : feed.status === "paused" 
-                  ? "text-muted-foreground" 
-                  : "text-primary"
-            }`} />
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${feed.status === "error"
+            ? "bg-red-500/10"
+            : feed.status === "paused"
+              ? "bg-muted"
+              : "bg-primary/10"
+            }`}>
+            <Rss className={`w-6 h-6 ${feed.status === "error"
+              ? "text-red-500"
+              : feed.status === "paused"
+                ? "text-muted-foreground"
+                : "text-primary"
+              }`} />
           </div>
 
           {/* Content */}

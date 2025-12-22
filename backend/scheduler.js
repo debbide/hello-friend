@@ -100,6 +100,8 @@ class RssScheduler {
       enabled: subscription.enabled !== false,
       chatId: subscription.chatId || null, // 推送目标
       userId: subscription.userId || null, // 用户 ID
+      customBotToken: subscription.customBotToken || null, // 自定义 Bot Token
+      customChatId: subscription.customChatId || null,     // 自定义推送目标
       isFirstCheck: true, // 标记首次检查，用于避免刷屏
       createdAt: new Date().toISOString(),
       lastCheck: null,

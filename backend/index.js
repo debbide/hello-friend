@@ -580,27 +580,55 @@ async function startBot() {
 
   // 初始化调度器
   scheduler = new RssScheduler(parseRssFeed, logger, async (subscription, newItems) => {
-    // 推送新内容到 Telegram
-    if (subscription.chatId && currentBot) {
-      for (const item of newItems.slice(0, 5)) { // 最多推送 5 条
-        try {
-          const message = `📰 <b>${subscription.title}</b>\n\n` +
-            `<b>${item.title}</b>\n` +
-            `${item.description?.substring(0, 200) || ''}\n\n` +
-            `🔗 <a href="${item.link}">阅读原文</a>`;
+    // 确定推送目标 Chat ID（优先使用自定义配置）
+    const targetChatId = subscription.customChatId || subscription.chatId;
+    if (!targetChatId) {
+      logger.warn(`[${subscription.title}] 无推送目标，跳过`);
+      return;
+    }
 
-          await bot.telegram.sendMessage(subscription.chatId, message, {
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-          });
-          // 记录日志
-          storage.addLog('info', `推送 RSS: [${subscription.title}] ${item.title}`, 'rss');
-        } catch (e) {
-          logger.error(`推送失败: ${e.message}`);
-          storage.addLog('error', `RSS 推送失败: ${e.message}`, 'rss');
-        }
+    // 确定使用哪个 Telegram API
+    let telegramApi;
+    let botLabel = '系统 Bot';
+
+    if (subscription.customBotToken) {
+      // 使用自定义 Bot Token
+      try {
+        const tempBot = new Telegraf(subscription.customBotToken);
+        telegramApi = tempBot.telegram;
+        botLabel = '自定义 Bot';
+      } catch (e) {
+        logger.error(`[${subscription.title}] 自定义 Bot Token 无效: ${e.message}`);
+        storage.addLog('error', `自定义 Bot Token 无效: ${e.message}`, 'rss');
+        return;
+      }
+    } else if (currentBot) {
+      telegramApi = currentBot.telegram;
+    } else {
+      logger.warn(`[${subscription.title}] 系统 Bot 未就绪，跳过推送`);
+      return;
+    }
+
+    // 推送新内容
+    for (const item of newItems.slice(0, 5)) { // 最多推送 5 条
+      try {
+        const message = `📰 <b>${subscription.title}</b>\n\n` +
+          `<b>${item.title}</b>\n` +
+          `${item.description?.substring(0, 200) || ''}\n\n` +
+          `🔗 <a href="${item.link}">阅读原文</a>`;
+
+        await telegramApi.sendMessage(targetChatId, message, {
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        });
+        // 记录日志
+        storage.addLog('info', `[${botLabel}] 推送: [${subscription.title}] ${item.title}`, 'rss');
+      } catch (e) {
+        logger.error(`推送失败: ${e.message}`);
+        storage.addLog('error', `[${botLabel}] 推送失败: ${e.message}`, 'rss');
       }
     }
+
     // 保存到历史
     for (const item of newItems) {
       scheduler.saveNewItemToHistory(subscription, item);
