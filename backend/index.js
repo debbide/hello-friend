@@ -593,8 +593,11 @@ async function startBot() {
             parse_mode: 'HTML',
             disable_web_page_preview: true,
           });
+          // 记录日志
+          storage.addLog('info', `推送 RSS: [${subscription.title}] ${item.title}`, 'rss');
         } catch (e) {
           logger.error(`推送失败: ${e.message}`);
+          storage.addLog('error', `RSS 推送失败: ${e.message}`, 'rss');
         }
       }
     }
@@ -622,6 +625,7 @@ async function startBot() {
       });
 
       logger.info('✅ Bot 轮询已开始');
+      storage.addLog('info', `Bot 启动成功: @${botInfo.username}`, 'bot');
 
       // 启动调度器
       scheduler.startAll();
@@ -649,6 +653,7 @@ async function startBot() {
   }
 
   logger.error('❌ Bot 启动失败，已达到最大重试次数');
+  storage.addLog('error', 'Bot 启动失败，已达最大重试次数', 'bot');
 }
 
 // ==================== 主函数 ====================
