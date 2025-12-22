@@ -663,14 +663,14 @@ async function startBot() {
     // 推送新内容
     for (const item of newItems.slice(0, 5)) { // 最多推送 5 条
       try {
-        const message = `📰 <b>${subscription.title}</b>\n\n` +
-          `<b>${item.title}</b>\n` +
-          `${item.description?.substring(0, 200) || ''}\n\n` +
-          `🔗 <a href="${item.link}">阅读原文</a>`;
+        // 简洁格式：来源 + 标题 + 链接
+        const message = `📰 <b>${subscription.title}</b>\n` +
+          `${item.title}\n` +
+          `${item.link}`;
 
         await telegramApi.sendMessage(targetChatId, message, {
           parse_mode: 'HTML',
-          disable_web_page_preview: true,
+          disable_web_page_preview: false,  // 显示链接预览
         });
         // 记录日志
         storage.addLog('info', `[${botLabel}] 推送: [${subscription.title}] ${item.title}`, 'rss');
