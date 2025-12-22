@@ -3,7 +3,7 @@
  */
 
 // 获取后端 API 地址
-function getBackendUrl(): string {
+export function getBackendUrl(): string {
   // 优先使用环境变量
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
@@ -18,7 +18,7 @@ function getBackendUrl(): string {
   return '';
 }
 
-const BACKEND_URL = getBackendUrl();
+export const BACKEND_URL = getBackendUrl();
 
 interface ApiResponse<T> {
   success: boolean;

@@ -30,7 +30,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
-import { subscriptionsApi, settingsApi, Subscription } from "@/lib/api/backend";
+import { subscriptionsApi, settingsApi, Subscription, BACKEND_URL } from "@/lib/api/backend";
 import { rssApi, FeedItem } from "@/lib/api/rss";
 import {
   Rss,
@@ -479,7 +479,7 @@ const RSSPage = () => {
                     className="w-full"
                     onClick={async () => {
                       try {
-                        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
+                        const response = await fetch(`${BACKEND_URL}/api/bot/test`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -726,7 +726,7 @@ const RSSPage = () => {
                             className="w-full"
                             onClick={async () => {
                               try {
-                                const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
+                                const response = await fetch(`${BACKEND_URL}/api/bot/test`, {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
