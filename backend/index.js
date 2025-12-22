@@ -1130,6 +1130,9 @@ async function startBot() {
           logger.warn(`发送启动通知失败: ${e.message}`);
         }
       }
+
+      // 启动成功，退出重试循环
+      return;
     } catch (err) {
       logger.error(`❌ 启动失败 (${attempt}/${MAX_RETRIES}): ${err.message}`);
       if (attempt < MAX_RETRIES) {
