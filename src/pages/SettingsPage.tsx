@@ -125,6 +125,9 @@ const SettingsPage = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
 
   const handleTestWebDAV = async () => {
+    // 先保存配置
+    await settingsApi.update(config);
+
     setIsTestingWebDAV(true);
     const result = await backupApi.testWebDAV();
     if (result.success) {
@@ -136,6 +139,9 @@ const SettingsPage = () => {
   };
 
   const handleBackupToWebDAV = async () => {
+    // 先保存配置
+    await settingsApi.update(config);
+
     setIsBackingUp(true);
     const result = await backupApi.uploadToWebDAV();
     if (result.success) {
@@ -396,6 +402,16 @@ const SettingsPage = () => {
                 value={(config as any).webdav?.remotePath || "/tgbot-backup"}
                 onChange={(e) => setConfig({ ...config, webdav: { ...(config as any).webdav, remotePath: e.target.value } } as any)}
                 placeholder="/tgbot-backup"
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
+              <div>
+                <p className="text-sm font-medium text-foreground">自动备份</p>
+                <p className="text-xs text-muted-foreground">每 24 小时自动备份，保留 3 天</p>
+              </div>
+              <Switch
+                checked={(config as any).webdav?.autoBackup || false}
+                onCheckedChange={(checked) => setConfig({ ...config, webdav: { ...(config as any).webdav, autoBackup: checked } } as any)}
               />
             </div>
             <div className="flex gap-2 pt-2">

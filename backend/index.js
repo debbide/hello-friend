@@ -800,6 +800,7 @@ app.post('/api/backup/webdav/upload', async (req, res) => {
       reminders: storage.getReminders(),
       stats: storage.getStats(),
       tools: storage.getTools(),
+      subscriptions: scheduler?.getSubscriptions() || [], // RSS 订阅
     };
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -878,7 +879,99 @@ app.delete('/api/backup/webdav/:filename', async (req, res) => {
   res.json(result);
 });
 
-// ==================== Bot 启动 ====================
+// ==================== 定时 WebDAV 备份 ====================
+
+let backupTimer = null;
+
+async function runAutoBackup() {
+  const settings = loadSettings();
+  const config = settings.webdav || {};
+
+  if (!config.autoBackup || !config.url || !config.username || !config.password) {
+    return;
+  }
+
+  logger.info('⏰ 执行定时 WebDAV 备份...');
+
+  try {
+    // 创建备份数据
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      version: '1.0',
+      config: { ...settings, webdav: { ...settings.webdav, password: '***' } },
+      notes: storage.getNotes(),
+      reminders: storage.getReminders(),
+      stats: storage.getStats(),
+      tools: storage.getTools(),
+      subscriptions: scheduler?.getSubscriptions() || [],
+    };
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const remotePath = `${config.remotePath || '/tgbot-backup'}/backup_${timestamp}.json`;
+    const content = JSON.stringify(backupData, null, 2);
+
+    const result = await webdav.uploadFile(config, remotePath, content);
+
+    if (result.success) {
+      logger.info(`✅ 定时备份成功: ${remotePath}`);
+      storage.addLog('info', `定时备份成功: ${remotePath}`, 'backup');
+
+      // 清理过期备份（保留 3 天）
+      await cleanOldBackups(config);
+    } else {
+      logger.error(`❌ 定时备份失败: ${result.error}`);
+      storage.addLog('error', `定时备份失败: ${result.error}`, 'backup');
+    }
+  } catch (error) {
+    logger.error(`❌ 定时备份异常: ${error.message}`);
+    storage.addLog('error', `定时备份异常: ${error.message}`, 'backup');
+  }
+}
+
+async function cleanOldBackups(config) {
+  try {
+    const remotePath = config.remotePath || '/tgbot-backup';
+    const result = await webdav.listFiles(config, remotePath);
+
+    if (!result.success || !result.data) return;
+
+    const now = new Date();
+    const maxAge = 3 * 24 * 60 * 60 * 1000; // 3 天
+
+    for (const file of result.data) {
+      if (file.modified) {
+        const fileDate = new Date(file.modified);
+        if (now - fileDate > maxAge) {
+          logger.info(`🗑️ 清理过期备份: ${file.name}`);
+          await webdav.deleteFile(config, file.path);
+          storage.addLog('info', `清理过期备份: ${file.name}`, 'backup');
+        }
+      }
+    }
+  } catch (error) {
+    logger.error(`清理备份失败: ${error.message}`);
+  }
+}
+
+function startBackupScheduler() {
+  if (backupTimer) {
+    clearInterval(backupTimer);
+  }
+
+  const settings = loadSettings();
+  const config = settings.webdav || {};
+
+  if (config.autoBackup && config.url) {
+    const interval = (config.autoBackupInterval || 24) * 60 * 60 * 1000; // 小时转毫秒
+    logger.info(`📅 启动定时备份，间隔: ${config.autoBackupInterval || 24} 小时`);
+
+    // 立即执行一次
+    setTimeout(runAutoBackup, 5000);
+
+    // 定时执行
+    backupTimer = setInterval(runAutoBackup, interval);
+  }
+}
 
 async function startBot() {
   // 停止旧实例
@@ -1071,6 +1164,9 @@ app.listen(PORT, '0.0.0.0', async () => {
   } catch (err) {
     logger.error(`初始启动失败: ${err.message}`);
   }
+
+  // 启动定时备份
+  startBackupScheduler();
 });
 
 // 优雅退出
