@@ -83,16 +83,28 @@ async function testConnection(config) {
 }
 
 /**
- * 确保远程目录存在
+ * 确保远程目录存在（递归创建）
  */
 async function ensureDir(config, remotePath) {
-    try {
-        await webdavRequest(config, 'MKCOL', remotePath);
-        return true;
-    } catch (e) {
-        // 目录可能已存在，忽略错误
-        return true;
+    if (!remotePath || remotePath === '/') return true;
+
+    // 分解路径，逐级创建
+    const parts = remotePath.split('/').filter(p => p);
+    let currentPath = '';
+
+    for (const part of parts) {
+        currentPath += '/' + part;
+        try {
+            const result = await webdavRequest(config, 'MKCOL', currentPath);
+            // 201 = 创建成功, 405 = 已存在, 409 = 父目录不存在（继续尝试）
+            if (result.status !== 201 && result.status !== 405 && result.status !== 409) {
+                // 可能已存在，忽略
+            }
+        } catch (e) {
+            // 忽略错误，继续创建下一级
+        }
     }
+    return true;
 }
 
 /**
@@ -100,9 +112,10 @@ async function ensureDir(config, remotePath) {
  */
 async function uploadFile(config, remotePath, content) {
     try {
-        // 确保备份目录存在
-        const dir = remotePath.substring(0, remotePath.lastIndexOf('/'));
-        if (dir) {
+        // 确保备份目录存在（提取目录部分）
+        const lastSlash = remotePath.lastIndexOf('/');
+        if (lastSlash > 0) {
+            const dir = remotePath.substring(0, lastSlash);
             await ensureDir(config, dir);
         }
 
