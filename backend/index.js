@@ -432,6 +432,33 @@ app.post('/api/notifications/test', async (req, res) => {
   }
 });
 
+// ==================== Reminders API ====================
+
+app.get('/api/reminders', (req, res) => {
+  const reminders = storage.getReminders();
+  res.json({ success: true, data: reminders });
+});
+
+app.post('/api/reminders', (req, res) => {
+  const { content, triggerAt, repeat } = req.body;
+  if (!content || !triggerAt) {
+    return res.status(400).json({ success: false, error: '内容和时间不能为空' });
+  }
+  const reminder = storage.addReminder(content, triggerAt, repeat);
+  storage.addLog('info', `添加提醒: ${content}`, 'reminder');
+  res.json({ success: true, data: reminder });
+});
+
+app.delete('/api/reminders/:id', (req, res) => {
+  const success = storage.deleteReminder(req.params.id);
+  if (success) {
+    storage.addLog('info', `删除提醒: ${req.params.id}`, 'reminder');
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ success: false, error: '提醒不存在' });
+  }
+});
+
 // ==================== Logs API ====================
 
 app.get('/api/logs', (req, res) => {
@@ -709,6 +736,10 @@ async function startBot() {
       // 启动调度器
       scheduler.startAll();
 
+      // 启动提醒检查
+      setInterval(() => checkReminders(bot), 60000);
+      checkReminders(bot); // 立即检查一次
+
       // 发送启动通知
       if (settings.adminId) {
         try {
@@ -721,8 +752,6 @@ async function startBot() {
           logger.warn(`发送启动通知失败: ${e.message}`);
         }
       }
-
-      return;
     } catch (err) {
       logger.error(`❌ 启动失败 (${attempt}/${MAX_RETRIES}): ${err.message}`);
       if (attempt < MAX_RETRIES) {
@@ -733,6 +762,35 @@ async function startBot() {
 
   logger.error('❌ Bot 启动失败，已达到最大重试次数');
   storage.addLog('error', 'Bot 启动失败，已达最大重试次数', 'bot');
+}
+
+async function checkReminders(bot) {
+  const settings = loadSettings();
+  if (!settings.features.reminders) return;
+
+  const reminders = storage.getReminders();
+  const now = new Date();
+  const pendingReminders = reminders.filter(r => r.status === 'pending' && new Date(r.triggerAt) <= now);
+
+  for (const reminder of pendingReminders) {
+    try {
+      if (settings.adminId) {
+        await bot.telegram.sendMessage(settings.adminId, `⏰ <b>提醒</b>\n\n${reminder.content}`, { parse_mode: 'HTML' });
+        storage.addLog('info', `触发提醒: ${reminder.content}`, 'reminder');
+
+        // 更新状态或设置下次提醒
+        if (reminder.repeat === 'daily') {
+          const nextTime = new Date(reminder.triggerAt);
+          nextTime.setDate(nextTime.getDate() + 1);
+          storage.updateReminder(reminder.id, { triggerAt: nextTime.toISOString() });
+        } else {
+          storage.updateReminder(reminder.id, { status: 'completed' });
+        }
+      }
+    } catch (e) {
+      storage.addLog('error', `提醒发送失败: ${e.message}`, 'reminder');
+    }
+  }
 }
 
 // ==================== 主函数 ====================
