@@ -122,13 +122,17 @@ function saveReminders(reminders) {
     saveData('reminders.json', reminders);
 }
 
-function addReminder(content, triggerAt, repeat = 'once') {
+function addReminder(content, triggerAt, repeat = 'once', userId = null, chatId = null) {
     const reminders = getReminders();
     const reminder = {
         id: `rem_${Date.now()}`,
-        content,
-        triggerAt,
+        message: content,       // 统一字段名: content -> message
+        targetTime: triggerAt,  // 统一字段名: triggerAt -> targetTime
+        content,                // 保留旧字段以兼容
+        triggerAt,              // 保留旧字段以兼容
         repeat,
+        userId,                 // 添加用户 ID
+        chatId,                 // 添加聊天 ID
         status: 'pending',
         createdAt: new Date().toISOString(),
     };

@@ -444,7 +444,12 @@ app.post('/api/reminders', (req, res) => {
   if (!content || !triggerAt) {
     return res.status(400).json({ success: false, error: '内容和时间不能为空' });
   }
-  const reminder = storage.addReminder(content, triggerAt, repeat);
+
+  const settings = loadSettings();
+  const userId = settings.adminId ? settings.adminId.toString() : null;
+  const chatId = userId; // 默认发给管理员
+
+  const reminder = storage.addReminder(content, triggerAt, repeat, userId, chatId);
   storage.addLog('info', `添加提醒: ${content}`, 'reminder');
   res.json({ success: true, data: reminder });
 });
@@ -458,6 +463,52 @@ app.delete('/api/reminders/:id', (req, res) => {
     res.status(404).json({ success: false, error: '提醒不存在' });
   }
 });
+
+// ... (Logs API omitted) ...
+
+async function checkReminders(bot) {
+  const settings = loadSettings();
+  if (!settings.features.reminders) return;
+
+  const reminders = storage.getReminders();
+  const now = new Date();
+
+  // 兼容 targetTime 和 triggerAt
+  const pendingReminders = reminders.filter(r => {
+    const time = r.targetTime || r.triggerAt;
+    return r.status === 'pending' && new Date(time) <= now;
+  });
+
+  for (const reminder of pendingReminders) {
+    try {
+      // 优先使用 reminder 中的 chatId，如果没有则发给 adminId
+      const targetChatId = reminder.chatId || settings.adminId;
+
+      if (targetChatId) {
+        const content = reminder.message || reminder.content;
+        await bot.telegram.sendMessage(targetChatId, `⏰ <b>提醒</b>\n\n${content}`, { parse_mode: 'HTML' });
+        storage.addLog('info', `触发提醒: ${content}`, 'reminder');
+
+        // 更新状态或设置下次提醒
+        if (reminder.repeat === 'daily') {
+          const time = reminder.targetTime || reminder.triggerAt;
+          const nextTime = new Date(time);
+          nextTime.setDate(nextTime.getDate() + 1);
+
+          // 更新时同时更新两个字段以保持兼容
+          storage.updateReminder(reminder.id, {
+            targetTime: nextTime.toISOString(),
+            triggerAt: nextTime.toISOString()
+          });
+        } else {
+          storage.updateReminder(reminder.id, { status: 'completed' });
+        }
+      }
+    } catch (e) {
+      storage.addLog('error', `提醒发送失败: ${e.message}`, 'reminder');
+    }
+  }
+}
 
 // ==================== Logs API ====================
 
@@ -764,34 +815,6 @@ async function startBot() {
   storage.addLog('error', 'Bot 启动失败，已达最大重试次数', 'bot');
 }
 
-async function checkReminders(bot) {
-  const settings = loadSettings();
-  if (!settings.features.reminders) return;
-
-  const reminders = storage.getReminders();
-  const now = new Date();
-  const pendingReminders = reminders.filter(r => r.status === 'pending' && new Date(r.triggerAt) <= now);
-
-  for (const reminder of pendingReminders) {
-    try {
-      if (settings.adminId) {
-        await bot.telegram.sendMessage(settings.adminId, `⏰ <b>提醒</b>\n\n${reminder.content}`, { parse_mode: 'HTML' });
-        storage.addLog('info', `触发提醒: ${reminder.content}`, 'reminder');
-
-        // 更新状态或设置下次提醒
-        if (reminder.repeat === 'daily') {
-          const nextTime = new Date(reminder.triggerAt);
-          nextTime.setDate(nextTime.getDate() + 1);
-          storage.updateReminder(reminder.id, { triggerAt: nextTime.toISOString() });
-        } else {
-          storage.updateReminder(reminder.id, { status: 'completed' });
-        }
-      }
-    } catch (e) {
-      storage.addLog('error', `提醒发送失败: ${e.message}`, 'reminder');
-    }
-  }
-}
 
 // ==================== 主函数 ====================
 
