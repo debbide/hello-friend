@@ -137,6 +137,8 @@ const RSSPage = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<ExtendedRSSFeed | null>(null);
+  const [editWhitelist, setEditWhitelist] = useState("");  // 编辑时的白名单字符串
+  const [editBlacklist, setEditBlacklist] = useState("");  // 编辑时的黑名单字符串
   const [previewArticles, setPreviewArticles] = useState<FeedItem[]>([]);
   const [allArticles, setAllArticles] = useState<FeedItem[]>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -227,7 +229,10 @@ const RSSPage = () => {
       url: selectedFeed.url,
       interval: selectedFeed.interval,
       enabled: selectedFeed.pushEnabled,
-      keywords: selectedFeed.keywords,
+      keywords: {
+        whitelist: editWhitelist.split(/[,，\n]/).map(s => s.trim()).filter(Boolean),
+        blacklist: editBlacklist.split(/[,，\n]/).map(s => s.trim()).filter(Boolean),
+      },
     });
 
     if (result.success) {
@@ -323,6 +328,8 @@ const RSSPage = () => {
 
   const openEditDialog = (feed: ExtendedRSSFeed) => {
     setSelectedFeed({ ...feed });
+    setEditWhitelist(feed.keywords.whitelist.join(", "));
+    setEditBlacklist(feed.keywords.blacklist.join(", "));
     setIsEditDialogOpen(true);
   };
 
@@ -916,14 +923,8 @@ const RSSPage = () => {
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">白名单</Label>
                     <Textarea
-                      value={selectedFeed.keywords.whitelist.join(", ")}
-                      onChange={(e) => setSelectedFeed({
-                        ...selectedFeed,
-                        keywords: {
-                          ...selectedFeed.keywords,
-                          whitelist: e.target.value.split(/[,，\n]/).map(s => s.trim()).filter(Boolean)
-                        }
-                      })}
+                      value={editWhitelist}
+                      onChange={(e) => setEditWhitelist(e.target.value)}
                       placeholder="效率, 工具, AI"
                       rows={2}
                     />
@@ -931,14 +932,8 @@ const RSSPage = () => {
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">黑名单</Label>
                     <Textarea
-                      value={selectedFeed.keywords.blacklist.join(", ")}
-                      onChange={(e) => setSelectedFeed({
-                        ...selectedFeed,
-                        keywords: {
-                          ...selectedFeed.keywords,
-                          blacklist: e.target.value.split(/[,，\n]/).map(s => s.trim()).filter(Boolean)
-                        }
-                      })}
+                      value={editBlacklist}
+                      onChange={(e) => setEditBlacklist(e.target.value)}
                       placeholder="广告, 招聘"
                       rows={2}
                     />
