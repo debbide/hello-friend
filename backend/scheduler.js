@@ -98,6 +98,7 @@ class RssScheduler {
       interval: subscription.interval || 30, // 默认 30 分钟
       keywords: subscription.keywords || { whitelist: [], blacklist: [] },
       enabled: subscription.enabled !== false,
+      chatId: subscription.chatId || null, // 推送目标
       createdAt: new Date().toISOString(),
       lastCheck: null,
       lastError: null,

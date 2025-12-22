@@ -217,6 +217,7 @@ app.get('/api/subscriptions', (req, res) => {
 app.post('/api/subscriptions', async (req, res) => {
   try {
     const { url, title, interval, keywords, enabled, chatId } = req.body;
+    const settings = loadSettings();
     if (!url) {
       return res.status(400).json({ success: false, error: 'URL is required' });
     }
@@ -230,7 +231,7 @@ app.post('/api/subscriptions', async (req, res) => {
       interval: interval || 30,
       keywords,
       enabled: enabled !== false,
-      chatId,
+      chatId: chatId || settings.adminId, // 默认推送到管理员
     });
     res.json({ success: true, data: subscription });
   } catch (error) {
