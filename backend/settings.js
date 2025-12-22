@@ -35,6 +35,15 @@ const DEFAULT_SETTINGS = {
     tools: true,
     reminders: true,
   },
+  // WebDAV 备份配置
+  webdav: {
+    url: '',
+    username: '',
+    password: '',
+    remotePath: '/tgbot-backup',
+    autoBackup: false,
+    autoBackupInterval: 24, // 小时
+  },
 };
 
 function ensureDataDir() {

@@ -150,6 +150,50 @@ export const aiProvidersApi = {
   },
 };
 
+// ==================== Backup API ====================
+
+export interface WebDAVBackup {
+  name: string;
+  path: string;
+  modified: string | null;
+  size: number;
+}
+
+export const backupApi = {
+  // 下载本地备份
+  async downloadLocal(): Promise<void> {
+    window.open(`${BACKEND_URL}/api/backup`, '_blank');
+  },
+
+  // 测试 WebDAV 连接
+  async testWebDAV(): Promise<ApiResponse<{ message: string }>> {
+    return request('/api/backup/webdav/test', { method: 'POST' });
+  },
+
+  // 备份到 WebDAV
+  async uploadToWebDAV(): Promise<ApiResponse<{ message: string; path: string }>> {
+    return request('/api/backup/webdav/upload', { method: 'POST' });
+  },
+
+  // 列出 WebDAV 备份
+  async listWebDAV(): Promise<ApiResponse<WebDAVBackup[]>> {
+    return request<WebDAVBackup[]>('/api/backup/webdav/list');
+  },
+
+  // 从 WebDAV 恢复
+  async restoreFromWebDAV(path: string): Promise<ApiResponse<{ message: string }>> {
+    return request('/api/backup/webdav/restore', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    });
+  },
+
+  // 删除 WebDAV 备份
+  async deleteWebDAV(filename: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/backup/webdav/${filename}`, { method: 'DELETE' });
+  },
+};
+
 // ==================== Status API ====================
 
 export interface BotStatus {

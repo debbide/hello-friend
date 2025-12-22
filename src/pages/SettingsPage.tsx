@@ -20,9 +20,13 @@ import {
   Save,
   Power,
   Loader2,
+  Cloud,
+  Upload,
+  FolderDown,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { settingsApi, statusApi, authApi, notificationsApi, BotSettings, BotStatus } from "@/lib/api/backend";
+import { settingsApi, statusApi, authApi, notificationsApi, backupApi, BotSettings, BotStatus } from "@/lib/api/backend";
 import {
   Dialog,
   DialogContent,
@@ -114,6 +118,32 @@ const SettingsPage = () => {
 
   const handleClearLogs = () => {
     toast.success("日志已清空");
+  };
+
+  // WebDAV 操作
+  const [isTestingWebDAV, setIsTestingWebDAV] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
+  const handleTestWebDAV = async () => {
+    setIsTestingWebDAV(true);
+    const result = await backupApi.testWebDAV();
+    if (result.success) {
+      toast.success(result.data?.message || "WebDAV 连接成功");
+    } else {
+      toast.error(result.error || "连接失败");
+    }
+    setIsTestingWebDAV(false);
+  };
+
+  const handleBackupToWebDAV = async () => {
+    setIsBackingUp(true);
+    const result = await backupApi.uploadToWebDAV();
+    if (result.success) {
+      toast.success(result.data?.message || "备份成功");
+    } else {
+      toast.error(result.error || "备份失败");
+    }
+    setIsBackingUp(false);
   };
 
   const handleTestNotification = async () => {
@@ -311,30 +341,71 @@ const SettingsPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-              <div>
-                <p className="text-sm font-medium text-foreground">数据库</p>
-                <p className="text-xs text-muted-foreground">SQLite · bot.db</p>
-              </div>
-              <Badge variant="outline">2.3 MB</Badge>
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-              <div>
-                <p className="text-sm font-medium text-foreground">日志文件</p>
-                <p className="text-xs text-muted-foreground">保留 14 天</p>
-              </div>
-              <Badge variant="outline">1.8 MB</Badge>
-            </div>
-
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-2" onClick={handleBackup}>
+              <Button variant="outline" className="flex-1 gap-2" onClick={() => backupApi.downloadLocal()}>
                 <Download className="w-4 h-4" />
-                备份数据
+                下载本地备份
               </Button>
               <Button variant="outline" className="flex-1 gap-2 text-destructive hover:text-destructive" onClick={handleClearLogs}>
                 <Trash2 className="w-4 h-4" />
                 清空日志
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* WebDAV Backup */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cloud className="w-4 h-4" />
+              WebDAV 云备份
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>WebDAV 地址</Label>
+              <Input
+                value={(config as any).webdav?.url || ""}
+                onChange={(e) => setConfig({ ...config, webdav: { ...(config as any).webdav, url: e.target.value } } as any)}
+                placeholder="https://dav.jianguoyun.com/dav/"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>用户名</Label>
+                <Input
+                  value={(config as any).webdav?.username || ""}
+                  onChange={(e) => setConfig({ ...config, webdav: { ...(config as any).webdav, username: e.target.value } } as any)}
+                  placeholder="邮箱或用户名"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>密码/应用密码</Label>
+                <Input
+                  type="password"
+                  value={(config as any).webdav?.password || ""}
+                  onChange={(e) => setConfig({ ...config, webdav: { ...(config as any).webdav, password: e.target.value } } as any)}
+                  placeholder="应用密码"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>远程路径</Label>
+              <Input
+                value={(config as any).webdav?.remotePath || "/tgbot-backup"}
+                onChange={(e) => setConfig({ ...config, webdav: { ...(config as any).webdav, remotePath: e.target.value } } as any)}
+                placeholder="/tgbot-backup"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1 gap-2" onClick={handleTestWebDAV} disabled={isTestingWebDAV}>
+                {isTestingWebDAV ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                测试连接
+              </Button>
+              <Button className="flex-1 gap-2" onClick={handleBackupToWebDAV} disabled={isBackingUp}>
+                {isBackingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                立即备份
               </Button>
             </div>
           </CardContent>

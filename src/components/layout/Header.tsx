@@ -112,7 +112,7 @@ export function Header({ onMenuClick }: HeaderProps) {
               </div>
             ) : (
               recentNotifications.map((notification) => (
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   key={notification.id}
                   className="flex flex-col items-start gap-1 py-3 cursor-pointer rounded-lg"
                   onClick={() => markAsRead(notification.id)}
@@ -149,10 +149,11 @@ export function Header({ onMenuClick }: HeaderProps) {
           <DropdownMenuContent align="end" className="rounded-xl">
             <DropdownMenuLabel>👤 我的账户</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="rounded-lg cursor-pointer">个人资料</DropdownMenuItem>
-            <DropdownMenuItem className="rounded-lg cursor-pointer">账户设置</DropdownMenuItem>
+            <DropdownMenuItem asChild className="rounded-lg cursor-pointer">
+              <Link to="/settings">⚙️ 设置</Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="text-destructive rounded-lg cursor-pointer gap-2"
               onClick={handleLogout}
             >
