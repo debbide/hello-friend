@@ -11,6 +11,7 @@ const { loadCommands } = require('./commands/loader');
 const RssScheduler = require('./scheduler');
 const { parseRssFeed } = require('./rss-parser');
 const { closeBrowser } = require('./puppeteer.service');
+const storage = require('./storage');
 
 // Logger setup
 const logger = winston.createLogger({
@@ -268,7 +269,33 @@ app.get('/api/subscriptions/history', (req, res) => {
 // ==================== Stats API ====================
 
 app.get('/api/stats', (req, res) => {
-  const settings = loadSettings();
+  const stats = storage.getStats();
+  const reminders = storage.getReminders();
+  const notes = storage.getNotes();
+  const today = new Date().toISOString().split('T')[0];
+  const todayStats = stats.dailyStats?.[today] || { total: 0 };
+
+  // 构建命令统计数组
+  const commandStats = Object.entries(stats.commandCounts || {}).map(([cmd, count]) => ({
+    command: cmd,
+    label: cmd.replace('/', ''),
+    count,
+    icon: '📊',
+  })).sort((a, b) => b.count - a.count).slice(0, 6);
+
+  // 构建最近 7 天趋势
+  const commandTrend = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayStats = stats.dailyStats?.[dateStr] || { total: 0 };
+    commandTrend.push({
+      date: `${d.getMonth() + 1}-${d.getDate()}`,
+      total: dayStats.total || 0,
+    });
+  }
+
   res.json({
     success: true,
     data: {
@@ -278,14 +305,14 @@ app.get('/api/stats', (req, res) => {
         : `${Math.floor(process.uptime() / 60)}m`,
       memory: Math.round((process.memoryUsage().heapUsed / process.memoryUsage().heapTotal) * 100),
       lastRestart: new Date(Date.now() - process.uptime() * 1000).toISOString(),
-      totalCommands: 0,
-      commandsToday: 0,
-      aiTokensUsed: 0,
+      totalCommands: stats.totalCommands || 0,
+      commandsToday: todayStats.total || 0,
+      aiTokensUsed: stats.aiTokensUsed || 0,
       rssFeeds: scheduler?.getSubscriptions()?.length || 0,
-      pendingReminders: 0,
-      activeNotes: 0,
-      commandStats: [],
-      commandTrend: [],
+      pendingReminders: reminders.filter(r => r.status === 'pending').length,
+      activeNotes: notes.filter(n => !n.completed).length,
+      commandStats,
+      commandTrend,
       recentActivity: [],
     }
   });
@@ -330,7 +357,14 @@ app.post('/api/notifications/test', async (req, res) => {
 // ==================== Logs API ====================
 
 app.get('/api/logs', (req, res) => {
-  res.json({ success: true, data: [] });
+  const limit = parseInt(req.query.limit) || 100;
+  const logs = storage.getLogs().slice(-limit).reverse();
+  res.json({ success: true, data: logs });
+});
+
+app.delete('/api/logs', (req, res) => {
+  storage.clearLogs();
+  res.json({ success: true });
 });
 
 // ==================== Auth API Extensions ====================
@@ -351,31 +385,101 @@ app.post('/api/auth/change-password', (req, res) => {
 
 // ==================== Tools API ====================
 
-const defaultTools = [
-  { id: "tr", command: "/tr", label: "翻译", description: "快速翻译文本到目标语言", emoji: "🌐", enabled: true, usage: 0 },
-  { id: "short", command: "/short", label: "短链接", description: "生成短链接，方便分享", emoji: "🔗", enabled: true, usage: 0 },
-  { id: "qr", command: "/qr", label: "二维码", description: "生成二维码图片", emoji: "📱", enabled: true, usage: 0 },
-  { id: "weather", command: "/weather", label: "天气查询", description: "查询全球城市天气", emoji: "🌤️", enabled: true, usage: 0 },
-  { id: "rate", command: "/rate", label: "汇率换算", description: "实时汇率换算", emoji: "💰", enabled: true, usage: 0 },
-  { id: "ip", command: "/ip", label: "IP 查询", description: "查询 IP 归属地", emoji: "🌍", enabled: true, usage: 0 },
-];
-
 app.get('/api/tools', (req, res) => {
-  res.json({ success: true, data: defaultTools });
+  const tools = storage.getTools();
+  res.json({ success: true, data: tools });
+});
+
+app.put('/api/tools/:id', (req, res) => {
+  const tool = storage.updateTool(req.params.id, req.body);
+  if (!tool) {
+    return res.status(404).json({ success: false, error: '工具不存在' });
+  }
+  res.json({ success: true, data: tool });
 });
 
 app.post('/api/tools/:id/toggle', (req, res) => {
-  res.json({ success: true });
+  const { enabled } = req.body;
+  const tool = storage.updateTool(req.params.id, { enabled });
+  if (!tool) {
+    return res.status(404).json({ success: false, error: '工具不存在' });
+  }
+  res.json({ success: true, data: tool });
 });
 
 // ==================== Reminders API ====================
 
 app.get('/api/reminders', (req, res) => {
-  res.json({ success: true, data: [] });
+  const reminders = storage.getReminders();
+  res.json({ success: true, data: reminders });
 });
 
+app.post('/api/reminders', (req, res) => {
+  const { content, triggerAt, repeat } = req.body;
+  if (!content || !triggerAt) {
+    return res.status(400).json({ success: false, error: '缺少必要字段' });
+  }
+  const reminder = storage.addReminder(content, triggerAt, repeat);
+  res.json({ success: true, data: reminder });
+});
+
+app.put('/api/reminders/:id', (req, res) => {
+  const reminder = storage.updateReminder(req.params.id, req.body);
+  if (!reminder) {
+    return res.status(404).json({ success: false, error: '提醒不存在' });
+  }
+  res.json({ success: true, data: reminder });
+});
+
+app.delete('/api/reminders/:id', (req, res) => {
+  const deleted = storage.deleteReminder(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: '提醒不存在' });
+  }
+  res.json({ success: true });
+});
+
+// ==================== Notes API ====================
+
 app.get('/api/notes', (req, res) => {
-  res.json({ success: true, data: [] });
+  const notes = storage.getNotes();
+  res.json({ success: true, data: notes });
+});
+
+app.post('/api/notes', (req, res) => {
+  const { content } = req.body;
+  if (!content) {
+    return res.status(400).json({ success: false, error: '内容不能为空' });
+  }
+  const note = storage.addNote(content);
+  res.json({ success: true, data: note });
+});
+
+app.put('/api/notes/:id', (req, res) => {
+  const note = storage.updateNote(req.params.id, req.body);
+  if (!note) {
+    return res.status(404).json({ success: false, error: '笔记不存在' });
+  }
+  res.json({ success: true, data: note });
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  const deleted = storage.deleteNote(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: '笔记不存在' });
+  }
+  res.json({ success: true });
+});
+
+// ==================== Backup API ====================
+
+app.get('/api/backup', (req, res) => {
+  try {
+    const backupFile = storage.createBackup();
+    res.download(backupFile);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ==================== Bot 启动 ====================
