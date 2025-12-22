@@ -261,6 +261,37 @@ app.post('/api/subscriptions/refresh', async (req, res) => {
   res.json({ success: true });
 });
 
+// Bot Token 测试 API
+app.post('/api/bot/test', async (req, res) => {
+  try {
+    const { botToken, chatId } = req.body;
+    const token = botToken || loadSettings().botToken;
+
+    if (!token) {
+      return res.status(400).json({ success: false, error: '未提供 Bot Token' });
+    }
+
+    const testBot = new Telegraf(token);
+    const botInfo = await testBot.telegram.getMe();
+
+    // 如果提供了 chatId，发送测试消息
+    if (chatId) {
+      await testBot.telegram.sendMessage(chatId, `✅ 测试成功！\n\n🤖 Bot: @${botInfo.username}\n📍 目标: ${chatId}\n⏱ 时间: ${new Date().toLocaleString('zh-CN')}`);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        username: botInfo.username,
+        firstName: botInfo.first_name,
+        messageSent: !!chatId
+      }
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/subscriptions/:id/refresh', async (req, res) => {
   try {
     await scheduler?.refreshSubscription(req.params.id);

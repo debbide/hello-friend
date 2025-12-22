@@ -603,6 +603,36 @@ const RSSPage = () => {
                         推送到指定用户、群组或频道
                       </p>
                     </div>
+                    {(newFeed.customBotToken || newFeed.customChatId) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/bot/test`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                botToken: newFeed.customBotToken || undefined,
+                                chatId: newFeed.customChatId || undefined,
+                              }),
+                            });
+                            const result = await response.json();
+                            if (result.success) {
+                              toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
+                            } else {
+                              toast.error(`❌ 验证失败: ${result.error}`);
+                            }
+                          } catch (e: unknown) {
+                            toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
+                          }
+                        }}
+                      >
+                        🧪 测试配置
+                      </Button>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
@@ -649,7 +679,7 @@ const RSSPage = () => {
                     <ChevronRight className="w-4 h-4" />
                   )}
                   <span className={`w-3 h-3 rounded-full ${group.color === "blue" ? "bg-blue-500" :
-                      group.color === "green" ? "bg-green-500" : "bg-purple-500"
+                    group.color === "green" ? "bg-green-500" : "bg-purple-500"
                     }`} />
                   <span className="font-medium">{group.name}</span>
                   <Badge variant="secondary" className="ml-2">{group.feeds.length}</Badge>
@@ -800,7 +830,7 @@ const RSSPage = () => {
                   <div key={group.id} className="flex items-center justify-between p-4 rounded-lg border">
                     <div className="flex items-center gap-3">
                       <span className={`w-4 h-4 rounded-full ${group.color === "blue" ? "bg-blue-500" :
-                          group.color === "green" ? "bg-green-500" : "bg-purple-500"
+                        group.color === "green" ? "bg-green-500" : "bg-purple-500"
                         }`} />
                       <span className="font-medium">{group.name}</span>
                       <Badge variant="secondary">
