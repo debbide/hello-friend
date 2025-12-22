@@ -35,11 +35,26 @@ services:
     networks:
       - bot-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health" ]
       interval: 30s
       timeout: 10s
       start_period: 15s
       retries: 3
+
+  # RSSHub - 自托管 RSS 生成服务
+  rsshub:
+    image: diygod/rsshub:latest
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      - CACHE_EXPIRE=300
+      - ACCESS_KEY=
+      - ALLOW_ORIGIN=*
+    networks:
+      - bot-network
 
 networks:
   bot-network:

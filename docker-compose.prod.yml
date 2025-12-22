@@ -18,5 +18,18 @@ services:
       timeout: 10s
       retries: 3
 
+  # RSSHub - 自托管 RSS 生成服务
+  rsshub:
+    image: diygod/rsshub:latest
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      - CACHE_EXPIRE=300
+      - ACCESS_KEY=
+      - ALLOW_ORIGIN=*
+
 volumes:
   app-data:

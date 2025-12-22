@@ -1,7 +1,7 @@
 /**
  * AI 助手命令 - 增强版（流式回复效果）
  */
-const { loadSettings } = require('../settings');
+const { loadSettings, getActiveAiConfig } = require('../settings');
 
 // 对话历史存储
 const conversationHistory = new Map();
@@ -51,9 +51,10 @@ function setup(bot, { logger }) {
       });
     }
 
-    if (!settings.openaiKey) {
+    const aiConfig = getActiveAiConfig(settings);
+    if (!aiConfig.apiKey) {
       return ctx.reply(
-        '❌ <b>未配置 AI 服务</b>\n\n请在配置面板中设置 OpenAI API Key',
+        '❌ <b>未配置 AI 服务</b>\n\n请在配置面板中添加 AI API 配置',
         { parse_mode: 'HTML' }
       );
     }
@@ -83,14 +84,14 @@ function setup(bot, { logger }) {
     let cursorIndex = 0;
 
     try {
-      const response = await fetch(`${settings.openaiBaseUrl}/chat/completions`, {
+      const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.openaiKey}`,
+          'Authorization': `Bearer ${aiConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: settings.openaiModel || 'gpt-3.5-turbo',
+          model: aiConfig.model || 'gpt-3.5-turbo',
           messages: [
             { role: 'system', content: '你是一个有帮助的助手，用中文回复。回答要简洁有条理。' },
             ...history,
@@ -221,8 +222,9 @@ function setup(bot, { logger }) {
       return ctx.reply('❌ 用法: /sum <文本或链接>\n或回复消息使用 /sum');
     }
 
-    if (!settings.openaiKey) {
-      return ctx.reply('❌ 未配置 OpenAI API Key');
+    const aiConfig = getActiveAiConfig(settings);
+    if (!aiConfig.apiKey) {
+      return ctx.reply('❌ 未配置 AI API');
     }
 
     const loading = await ctx.reply('📝 正在生成摘要...');
@@ -241,14 +243,14 @@ function setup(bot, { logger }) {
         }
       }
 
-      const response = await fetch(`${settings.openaiBaseUrl}/chat/completions`, {
+      const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.openaiKey}`,
+          'Authorization': `Bearer ${aiConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: settings.openaiModel || 'gpt-3.5-turbo',
+          model: aiConfig.model || 'gpt-3.5-turbo',
           messages: [
             { role: 'system', content: '你是一个专业的摘要助手。请用中文为以下内容生成简洁的摘要，突出要点。' },
             { role: 'user', content: contentToSummarize.substring(0, 4000) },
@@ -291,8 +293,9 @@ function setup(bot, { logger }) {
   const handleContinuousChat = async (ctx, text) => {
     const settings = loadSettings();
     const userId = ctx.from.id.toString();
+    const aiConfig = getActiveAiConfig(settings);
 
-    if (!settings.openaiKey) {
+    if (!aiConfig.apiKey) {
       return; // 未配置 AI，静默忽略
     }
 
@@ -321,14 +324,14 @@ function setup(bot, { logger }) {
     let cursorIndex = 0;
 
     try {
-      const response = await fetch(`${settings.openaiBaseUrl}/chat/completions`, {
+      const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.openaiKey}`,
+          'Authorization': `Bearer ${aiConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: settings.openaiModel || 'gpt-3.5-turbo',
+          model: aiConfig.model || 'gpt-3.5-turbo',
           messages: [
             { role: 'system', content: '你是一个有帮助的助手，用中文回复。回答要简洁有条理。' },
             ...history,

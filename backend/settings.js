@@ -12,6 +12,10 @@ const DEFAULT_SETTINGS = {
   botToken: '',
   adminId: '',
   groupId: '',
+  // AI 多配置支持
+  aiProviders: [],        // AIProvider[] 数组: { id, name, apiKey, baseUrl, model, isActive }
+  activeAiProvider: null, // 当前激活的配置 ID
+  // 保留旧字段用于兼容迁移
   openaiKey: '',
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiModel: 'gpt-3.5-turbo',
@@ -65,9 +69,36 @@ function getDataPath() {
   return DATA_PATH;
 }
 
+// 获取当前激活的 AI 配置
+function getActiveAiConfig(settings) {
+  // 如果没有传入 settings，则加载
+  const s = settings || loadSettings();
+
+  // 优先使用多配置模式
+  if (s.aiProviders?.length > 0 && s.activeAiProvider) {
+    const active = s.aiProviders.find(p => p.id === s.activeAiProvider);
+    if (active) {
+      return {
+        apiKey: active.apiKey,
+        baseUrl: active.baseUrl,
+        model: active.model,
+        name: active.name,
+      };
+    }
+  }
+  // 兼容旧的单配置模式
+  return {
+    apiKey: s.openaiKey,
+    baseUrl: s.openaiBaseUrl || 'https://api.openai.com/v1',
+    model: s.openaiModel || 'gpt-3.5-turbo',
+    name: '默认配置',
+  };
+}
+
 module.exports = {
   loadSettings,
   saveSettings,
   getDataPath,
+  getActiveAiConfig,
   DEFAULT_SETTINGS,
 };

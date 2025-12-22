@@ -2,21 +2,19 @@ import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { settingsApi } from "@/lib/api/backend";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { aiProvidersApi, AIProvider } from "@/lib/api/backend";
 import {
   Bot,
   Settings,
@@ -31,10 +29,11 @@ import {
   DollarSign,
   Zap,
   BarChart3,
-  Globe,
-  Server,
+  Plus,
   CheckCircle2,
   Loader2,
+  Pencil,
+  Power,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -48,17 +47,6 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-
-interface AIConfig {
-  providerType: "official" | "thirdparty";
-  apiKey: string;
-  apiUrl: string;
-  model: string;
-  systemPrompt: string;
-  maxTokens: number;
-  temperature: number;
-  streamEnabled: boolean;
-}
 
 interface ChatMessage {
   id: string;
@@ -79,16 +67,7 @@ const defaultAPIUsage = [
 ];
 
 const AIChatPage = () => {
-  const [config, setConfig] = useState<AIConfig>({
-    providerType: "official",
-    apiKey: "",
-    apiUrl: "https://api.openai.com/v1",
-    model: "gpt-4o-mini",
-    systemPrompt: "你是一个友好、专业的 AI 助手，善于用简洁明了的方式回答问题。",
-    maxTokens: 2048,
-    temperature: 0.7,
-    streamEnabled: true,
-  });
+  const [providers, setProviders] = useState<AIProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -96,40 +75,103 @@ const AIChatPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [apiUsage] = useState(defaultAPIUsage);
 
+  // Dialog states
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<AIProvider | null>(null);
+  const [newProvider, setNewProvider] = useState({
+    name: "",
+    apiKey: "",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  });
+
   useEffect(() => {
-    loadConfig();
+    loadProviders();
   }, []);
 
-  const loadConfig = async () => {
+  const loadProviders = async () => {
     setIsLoading(true);
-    const result = await settingsApi.get();
+    const result = await aiProvidersApi.list();
     if (result.success && result.data) {
-      setConfig(prev => ({
-        ...prev,
-        // 从后端平级字段读取（openaiKey, openaiBaseUrl, openaiModel）
-        apiKey: result.data!.openaiKey || "",
-        apiUrl: result.data!.openaiBaseUrl || "https://api.openai.com/v1",
-        model: result.data!.openaiModel || "gpt-4o-mini",
-        providerType: result.data!.openaiBaseUrl && result.data!.openaiBaseUrl !== "https://api.openai.com/v1" ? "thirdparty" : "official",
-      }));
+      setProviders(result.data);
     }
     setIsLoading(false);
   };
 
-  const handleSaveConfig = async () => {
+  const handleSaveProvider = async () => {
     setIsSaving(true);
-    // 保存到后端的平级字段（与 backend/settings.js 和 ai.js 一致）
-    const result = await settingsApi.update({
-      openaiKey: config.apiKey,
-      openaiBaseUrl: config.apiUrl,
-      openaiModel: config.model,
-    });
-    if (result.success) {
-      toast.success("配置已保存");
+
+    if (editingProvider) {
+      // 更新现有配置
+      const result = await aiProvidersApi.update(editingProvider.id, newProvider);
+      if (result.success) {
+        toast.success("配置已更新");
+        loadProviders();
+      } else {
+        toast.error(result.error || "更新失败");
+      }
     } else {
-      toast.error(result.error || "保存失败");
+      // 创建新配置
+      const result = await aiProvidersApi.create(newProvider);
+      if (result.success) {
+        toast.success("配置已添加");
+        loadProviders();
+      } else {
+        toast.error(result.error || "添加失败");
+      }
     }
+
     setIsSaving(false);
+    setDialogOpen(false);
+    setEditingProvider(null);
+    setNewProvider({
+      name: "",
+      apiKey: "",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    });
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    const result = await aiProvidersApi.delete(id);
+    if (result.success) {
+      toast.success("配置已删除");
+      loadProviders();
+    } else {
+      toast.error(result.error || "删除失败");
+    }
+  };
+
+  const handleActivateProvider = async (id: string) => {
+    const result = await aiProvidersApi.activate(id);
+    if (result.success) {
+      toast.success(result.message || "已切换");
+      loadProviders();
+    } else {
+      toast.error(result.error || "切换失败");
+    }
+  };
+
+  const openEditDialog = (provider: AIProvider) => {
+    setEditingProvider(provider);
+    setNewProvider({
+      name: provider.name,
+      apiKey: "", // 不回显 API Key
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+    });
+    setDialogOpen(true);
+  };
+
+  const openAddDialog = () => {
+    setEditingProvider(null);
+    setNewProvider({
+      name: "",
+      apiKey: "",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    });
+    setDialogOpen(true);
   };
 
   const handleClearHistory = () => {
@@ -156,6 +198,8 @@ const AIChatPage = () => {
     );
   }
 
+  const activeProvider = providers.find(p => p.isActive);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -163,12 +207,16 @@ const AIChatPage = () => {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <span className="text-2xl">🤖</span> AI 对话
           </h1>
-          <p className="text-muted-foreground mt-1">OpenAI 配置、用量追踪与对话历史</p>
+          <p className="text-muted-foreground mt-1">
+            管理多个 AI API 配置，一键切换使用
+          </p>
         </div>
-        <Badge variant="secondary" className="px-3 py-1">
-          <Sparkles className="w-3 h-3 mr-1" />
-          已用 {(totalTokens / 1000).toFixed(1)}k Tokens
-        </Badge>
+        {activeProvider && (
+          <Badge variant="secondary" className="px-3 py-1">
+            <Sparkles className="w-3 h-3 mr-1" />
+            当前: {activeProvider.name}
+          </Badge>
+        )}
       </div>
 
       <Tabs defaultValue="config" className="w-full">
@@ -188,120 +236,92 @@ const AIChatPage = () => {
         </TabsList>
 
         <TabsContent value="config" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">🔌 API 提供商</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <button
-                    onClick={() => setConfig({ ...config, providerType: "official", apiUrl: "https://api.openai.com/v1" })}
-                    className={`p-4 rounded-xl border-2 transition-all text-left ${config.providerType === "official" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.providerType === "official" ? "bg-primary/20" : "bg-muted"}`}>
-                        <Globe className={`w-5 h-5 ${config.providerType === "official" ? "text-primary" : "text-muted-foreground"}`} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">OpenAI 官方</span>
-                          {config.providerType === "official" && <CheckCircle2 className="w-4 h-4 text-primary" />}
-                        </div>
-                        <p className="text-sm text-muted-foreground">使用 OpenAI 官方 API</p>
-                      </div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setConfig({ ...config, providerType: "thirdparty", apiUrl: config.apiUrl === "https://api.openai.com/v1" ? "" : config.apiUrl })}
-                    className={`p-4 rounded-xl border-2 transition-all text-left ${config.providerType === "thirdparty" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.providerType === "thirdparty" ? "bg-primary/20" : "bg-muted"}`}>
-                        <Server className={`w-5 h-5 ${config.providerType === "thirdparty" ? "text-primary" : "text-muted-foreground"}`} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">第三方中转</span>
-                          {config.providerType === "thirdparty" && <CheckCircle2 className="w-4 h-4 text-primary" />}
-                        </div>
-                        <p className="text-sm text-muted-foreground">兼容 OpenAI 格式的 API</p>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="space-y-4">
+            {/* 添加配置按钮 */}
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">API 配置列表</h2>
+              <Button onClick={openAddDialog} className="gap-2">
+                <Plus className="w-4 h-4" />
+                添加配置
+              </Button>
+            </div>
 
-            <Card>
-              <CardHeader><CardTitle className="text-base flex items-center gap-2">🔑 API 设置</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey">API Key</Label>
-                  <div className="flex gap-2">
-                    <Input id="apiKey" type={showApiKey ? "text" : "password"} value={config.apiKey} onChange={(e) => setConfig({ ...config, apiKey: e.target.value })} placeholder="sk-..." className="flex-1" />
-                    <Button variant="outline" size="icon" onClick={() => setShowApiKey(!showApiKey)}>
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="apiUrl">API URL</Label>
-                  <Input id="apiUrl" value={config.apiUrl} onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })} placeholder="https://api.openai.com/v1" disabled={config.providerType === "official"} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="model">模型</Label>
-                  {config.providerType === "official" ? (
-                    <Select value={config.model} onValueChange={(value) => setConfig({ ...config, model: value })}>
-                      <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                        <SelectItem value="gpt-4o-mini">GPT-4o-mini</SelectItem>
-                        <SelectItem value="gpt-4-turbo">GPT-4-turbo</SelectItem>
-                        <SelectItem value="gpt-3.5-turbo">GPT-3.5-turbo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input id="model" value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} placeholder="gpt-4o-mini / claude-3-sonnet" />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle className="text-base flex items-center gap-2">⚙️ 模型参数</CardTitle></CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between"><Label>Max Tokens</Label><span className="text-sm font-medium text-primary">{config.maxTokens}</span></div>
-                  <Slider value={[config.maxTokens]} onValueChange={([value]) => setConfig({ ...config, maxTokens: value })} min={256} max={4096} step={256} />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between"><Label>Temperature</Label><span className="text-sm font-medium text-primary">{config.temperature}</span></div>
-                  <Slider value={[config.temperature * 100]} onValueChange={([value]) => setConfig({ ...config, temperature: value / 100 })} min={0} max={200} step={10} />
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <div><Label>流式输出</Label><p className="text-xs text-muted-foreground">实时显示 AI 回复</p></div>
-                  <Switch checked={config.streamEnabled ?? true} onCheckedChange={(checked) => setConfig({ ...config, streamEnabled: checked })} />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="lg:col-span-2">
-              <CardHeader><CardTitle className="text-base flex items-center gap-2">🎭 System Prompt</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea value={config.systemPrompt} onChange={(e) => setConfig({ ...config, systemPrompt: e.target.value })} placeholder="你是一个友好的 AI 助手..." rows={4} className="resize-none" />
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={config.providerType === "official" ? "default" : "secondary"}>{config.providerType === "official" ? "OpenAI 官方" : "第三方中转"}</Badge>
-                    <Badge variant="outline">{config.model}</Badge>
-                  </div>
-                  <Button onClick={handleSaveConfig} disabled={isSaving} className="gap-2">
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    保存配置
+            {/* 配置列表 */}
+            {providers.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Bot className="w-12 h-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-4">暂无 AI 配置</p>
+                  <Button onClick={openAddDialog} variant="outline" className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    添加第一个配置
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {providers.map((provider) => (
+                  <Card
+                    key={provider.id}
+                    className={`relative transition-all ${provider.isActive
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : "hover:border-primary/50"
+                      }`}
+                  >
+                    {provider.isActive && (
+                      <div className="absolute -top-2 -right-2">
+                        <Badge className="bg-primary text-primary-foreground">
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          使用中
+                        </Badge>
+                      </div>
+                    )}
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Bot className="w-4 h-4" />
+                        {provider.name}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="text-sm text-muted-foreground">
+                        <p className="truncate">🔗 {provider.baseUrl}</p>
+                        <p>🧠 {provider.model}</p>
+                        <p>🔑 {provider.apiKey}</p>
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        {!provider.isActive && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleActivateProvider(provider.id)}
+                            className="flex-1 gap-1"
+                          >
+                            <Power className="w-3 h-3" />
+                            激活
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditDialog(provider)}
+                          className="gap-1"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteProvider(provider.id)}
+                          className="gap-1 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -409,6 +429,76 @@ const AIChatPage = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* 添加/编辑配置对话框 */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingProvider ? "编辑配置" : "添加 AI 配置"}</DialogTitle>
+            <DialogDescription>
+              配置 OpenAI 兼容的 API 服务
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">配置名称</Label>
+              <Input
+                id="name"
+                value={newProvider.name}
+                onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
+                placeholder="如：OpenAI 官方、便宜中转"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="apiKey">API Key</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="apiKey"
+                  type={showApiKey ? "text" : "password"}
+                  value={newProvider.apiKey}
+                  onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })}
+                  placeholder={editingProvider ? "留空则保持不变" : "sk-..."}
+                  className="flex-1"
+                />
+                <Button variant="outline" size="icon" onClick={() => setShowApiKey(!showApiKey)}>
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="baseUrl">API 地址</Label>
+              <Input
+                id="baseUrl"
+                value={newProvider.baseUrl}
+                onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })}
+                placeholder="https://api.openai.com/v1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="model">默认模型</Label>
+              <Input
+                id="model"
+                value={newProvider.model}
+                onChange={(e) => setNewProvider({ ...newProvider, model: e.target.value })}
+                placeholder="gpt-4o-mini"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleSaveProvider}
+              disabled={isSaving || !newProvider.name || (!editingProvider && !newProvider.apiKey) || !newProvider.baseUrl}
+              className="gap-2"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

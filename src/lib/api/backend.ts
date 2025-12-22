@@ -111,6 +111,45 @@ export const settingsApi = {
   },
 };
 
+// ==================== AI Providers API ====================
+
+export interface AIProvider {
+  id: string;
+  name: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  isActive: boolean;
+}
+
+export const aiProvidersApi = {
+  async list(): Promise<ApiResponse<AIProvider[]>> {
+    return request<AIProvider[]>('/api/ai-providers');
+  },
+
+  async create(provider: Partial<AIProvider>): Promise<ApiResponse<AIProvider>> {
+    return request('/api/ai-providers', {
+      method: 'POST',
+      body: JSON.stringify(provider),
+    });
+  },
+
+  async update(id: string, updates: Partial<AIProvider>): Promise<ApiResponse<AIProvider>> {
+    return request(`/api/ai-providers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async delete(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/ai-providers/${id}`, { method: 'DELETE' });
+  },
+
+  async activate(id: string): Promise<ApiResponse<{ success: boolean; message: string }>> {
+    return request(`/api/ai-providers/${id}/activate`, { method: 'POST' });
+  },
+};
+
 // ==================== Status API ====================
 
 export interface BotStatus {
