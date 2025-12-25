@@ -2,6 +2,11 @@
  * 实用工具命令
  */
 const QRCode = require('qrcode');
+const whois = require('whois');
+const util = require('util');
+
+// Promisify whois lookup
+const whoisLookup = util.promisify(whois.lookup);
 
 function setup(bot, { logger }) {
   // /id 命令 - 获取 ID
@@ -173,104 +178,34 @@ function setup(bot, { logger }) {
       .replace(/\/.*$/, '')          // 移除路径
       .replace(/^www\./, '');        // 移除 www 前缀
 
-    const statusMsg = await ctx.reply(`🔍 正在查询 ${domain} 的域名信息...`);
+    await ctx.sendChatAction('typing');
 
     try {
-      // 使用 RDAP (Registration Data Access Protocol) 查询
-      // RDAP 是 WHOIS 的现代替代方案，返回 JSON 格式
-      const rdapResponse = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
+      // 使用 whois 库查询
+      const data = await whoisLookup(domain);
 
-      if (rdapResponse.ok) {
-        const rdapData = await rdapResponse.json();
+      // 截取前 2000 个字符避免消息过长
+      const truncatedData = data.length > 2000
+        ? data.substring(0, 2000) + '\n...(已截断)'
+        : data;
 
-        // 解析 RDAP 响应
-        let registrar = '-';
-        let creationDate = '-';
-        let expirationDate = '-';
-        let updatedDate = '-';
-        let status = [];
-        let nameServers = [];
-
-        // 提取注册商
-        if (rdapData.entities) {
-          const registrarEntity = rdapData.entities.find(e => e.roles && e.roles.includes('registrar'));
-          if (registrarEntity && registrarEntity.vcardArray) {
-            const vcard = registrarEntity.vcardArray[1];
-            const fnEntry = vcard.find(v => v[0] === 'fn');
-            if (fnEntry) registrar = fnEntry[3];
-          }
-        }
-
-        // 提取日期信息
-        if (rdapData.events) {
-          rdapData.events.forEach(event => {
-            const date = new Date(event.eventDate).toLocaleDateString('zh-CN');
-            switch (event.eventAction) {
-              case 'registration': creationDate = date; break;
-              case 'expiration': expirationDate = date; break;
-              case 'last changed':
-              case 'last update of RDAP database': updatedDate = date; break;
-            }
-          });
-        }
-
-        // 提取状态
-        if (rdapData.status) {
-          status = rdapData.status.slice(0, 3); // 只取前 3 个状态
-        }
-
-        // 提取 DNS 服务器
-        if (rdapData.nameservers) {
-          nameServers = rdapData.nameservers.map(ns => ns.ldhName).slice(0, 4);
-        }
-
-        // 构建消息
-        let message = `🔍 <b>域名信息查询</b>\n\n`;
-        message += `📋 <b>域名:</b> <code>${rdapData.ldhName || domain}</code>\n`;
-        message += `🏢 <b>注册商:</b> ${registrar}\n`;
-        message += `📅 <b>注册日期:</b> ${creationDate}\n`;
-        message += `⏰ <b>到期日期:</b> ${expirationDate}\n`;
-        message += `🔄 <b>更新日期:</b> ${updatedDate}\n`;
-
-        if (status.length > 0) {
-          message += `📊 <b>状态:</b> ${status.join(', ')}\n`;
-        }
-
-        if (nameServers.length > 0) {
-          message += `\n🌐 <b>DNS 服务器:</b>\n`;
-          nameServers.forEach(ns => {
-            message += `  • <code>${ns}</code>\n`;
-          });
-        }
-
-        message += `\n💡 更多详情: <a href="https://who.is/whois/${domain}">who.is</a>`;
-
-        await ctx.telegram.editMessageText(
-          ctx.chat.id, statusMsg.message_id, null,
-          message, { parse_mode: 'HTML', disable_web_page_preview: true }
-        );
-      } else {
-        // RDAP 查询失败，尝试备用方案
-        throw new Error('RDAP 查询无结果');
-      }
+      await ctx.reply(
+        `🔍 <b>Whois 查询结果: ${domain}</b>\n\n<pre>${escapeHtml(truncatedData)}</pre>`,
+        { parse_mode: 'HTML' }
+      );
     } catch (error) {
       logger.error(`WHOIS 查询失败: ${error.message}`);
-
-      // 提供备用查询方式
-      const fallbackMessage = `🔍 <b>域名查询</b>\n\n` +
-        `📋 域名: <code>${domain}</code>\n\n` +
-        `⚠️ 无法直接获取 WHOIS 信息\n\n` +
-        `💡 <b>在线查询工具:</b>\n` +
-        `• <a href="https://who.is/whois/${domain}">Who.is</a>\n` +
-        `• <a href="https://whois.domaintools.com/${domain}">DomainTools</a>\n` +
-        `• <a href="https://lookup.icann.org/en/lookup?name=${domain}">ICANN Lookup</a>`;
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id, statusMsg.message_id, null,
-        fallbackMessage, { parse_mode: 'HTML', disable_web_page_preview: true }
-      );
+      await ctx.reply(`❌ 查询失败: ${error.message || '未知错误'}`);
     }
   });
+
+  // HTML 转义函数
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
 
   logger.info('🛠️ Tools 命令已加载');
 }
