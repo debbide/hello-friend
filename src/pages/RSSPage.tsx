@@ -163,7 +163,11 @@ const RSSPage = () => {
   const [activeTab, setActiveTab] = useState("feeds");
   // 全局推送设置
   const [isGlobalSettingsOpen, setIsGlobalSettingsOpen] = useState(false);
-  const [globalRssConfig, setGlobalRssConfig] = useState({ customBotToken: "", customChatId: "" });
+  const [globalRssConfig, setGlobalRssConfig] = useState({
+    customBotToken: "",
+    customChatId: "",
+    messageTemplate: "📰 <b>{feed_title}</b>\n{title}\n{link}",
+  });
 
   // 加载订阅数据
   useEffect(() => {
@@ -177,6 +181,7 @@ const RSSPage = () => {
       setGlobalRssConfig({
         customBotToken: result.data.rss.customBotToken || "",
         customChatId: result.data.rss.customChatId || "",
+        messageTemplate: result.data.rss.messageTemplate || "📰 <b>{feed_title}</b>\n{title}\n{link}",
       });
     }
   };
@@ -471,6 +476,19 @@ const RSSPage = () => {
                   />
                   <p className="text-xs text-muted-foreground">推送到指定用户、群组或频道</p>
                 </div>
+                <div className="space-y-2">
+                  <Label>消息模板</Label>
+                  <Textarea
+                    placeholder="📰 <b>{feed_title}</b>\n{title}\n{link}"
+                    value={globalRssConfig.messageTemplate}
+                    onChange={(e) => setGlobalRssConfig({ ...globalRssConfig, messageTemplate: e.target.value })}
+                    rows={4}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    可用变量: {"{feed_title}"} {"{title}"} {"{link}"} {"{description}"} {"{date}"}
+                  </p>
+                </div>
                 {(globalRssConfig.customBotToken || globalRssConfig.customChatId) && (
                   <Button
                     type="button"
@@ -509,6 +527,7 @@ const RSSPage = () => {
                     rss: {
                       customBotToken: globalRssConfig.customBotToken,
                       customChatId: globalRssConfig.customChatId,
+                      messageTemplate: globalRssConfig.messageTemplate,
                     }
                   });
                   if (result.success) {

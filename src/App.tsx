@@ -15,6 +15,7 @@ import LogsPage from "./pages/LogsPage";
 import QuickSendPage from "./pages/QuickSendPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import SettingsPage from "./pages/SettingsPage";
+import ScheduledTasksPage from "./pages/ScheduledTasksPage";
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
 
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/logs" element={<LogsPage />} />
               <Route path="/quick-send" element={<QuickSendPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/scheduled-tasks" element={<ScheduledTasksPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

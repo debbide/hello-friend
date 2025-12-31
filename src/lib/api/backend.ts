@@ -95,6 +95,7 @@ export interface BotSettings {
     checkInterval?: number;
     customBotToken?: string;
     customChatId?: string;
+    messageTemplate?: string;
   };
 }
 
@@ -562,6 +563,26 @@ export const authApi = {
   },
 };
 
+// ==================== Scheduled Tasks API ====================
+
+export interface ScheduledTask {
+  id: string;
+  type: 'rss' | 'system' | 'backup';
+  name: string;
+  description: string;
+  interval: string;
+  lastRun: string | null;
+  nextRun: string | null;
+  status: 'active' | 'paused' | 'error';
+  error: string | null;
+}
+
+export const scheduledTasksApi = {
+  async list(): Promise<ApiResponse<ScheduledTask[]>> {
+    return request<ScheduledTask[]>('/api/scheduled-tasks');
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -583,4 +604,5 @@ export default {
   notifications: notificationsApi,
   tools: toolsApi,
   auth: authApi,
+  scheduledTasks: scheduledTasksApi,
 };

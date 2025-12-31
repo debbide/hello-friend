@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS = {
     checkInterval: 30, // 默认检查间隔(分钟)
     customBotToken: '', // 全局自定义 Bot Token
     customChatId: '',   // 全局自定义推送目标
+    messageTemplate: '📰 <b>{feed_title}</b>\n{title}\n{link}', // 消息模板
+    // 可用变量: {feed_title}, {title}, {link}, {description}, {date}
   },
   features: {
     ai: true,

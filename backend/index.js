@@ -5,6 +5,7 @@
 const express = require('express');
 const cors = require('cors');
 const winston = require('winston');
+const rateLimit = require('express-rate-limit');
 const { Telegraf } = require('telegraf');
 const { loadSettings, saveSettings, getDataPath } = require('./settings');
 const { loadCommands } = require('./commands/loader');
@@ -32,6 +33,30 @@ let scheduler = null;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// ==================== API 限流配置 ====================
+
+// 通用 API 限流：每个 IP 每分钟最多 100 次请求
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 分钟
+  max: 100,
+  message: { success: false, error: '请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 登录接口限流：每个 IP 每分钟最多 5 次（防暴力破解）
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 分钟
+  max: 5,
+  message: { success: false, error: '登录尝试过于频繁，请 1 分钟后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 应用限流中间件
+app.use('/api', apiLimiter);
+app.use('/api/auth/login', loginLimiter);
 
 // 静态文件服务（合并部署时使用）
 const path = require('path');
@@ -108,6 +133,49 @@ const DEFAULT_ADMIN = { username: 'admin', password: 'admin' };
 // 简单的 token 存储（生产环境应使用 JWT 或 session）
 let authTokens = new Map();
 
+// ==================== 认证中间件 ====================
+
+// 不需要认证的公开接口
+const publicPaths = [
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/verify',
+  '/api/health',
+];
+
+// 认证中间件
+function authMiddleware(req, res, next) {
+  // 检查是否是公开接口
+  if (publicPaths.includes(req.path)) {
+    return next();
+  }
+
+  // 非 /api 路径不需要认证（静态文件等）
+  if (!req.path.startsWith('/api')) {
+    return next();
+  }
+
+  // 从请求头获取 Token
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ success: false, error: '未登录，请先登录' });
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const user = authTokens.get(token);
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: '登录已过期，请重新登录' });
+  }
+
+  // 将用户信息挂载到请求对象
+  req.user = user;
+  next();
+}
+
+// 应用认证中间件到所有路由
+app.use(authMiddleware);
+
 // 登录
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
@@ -154,16 +222,6 @@ app.get('/api/auth/verify', (req, res) => {
     res.json({ valid: true, user });
   } else {
     res.json({ valid: false });
-  }
-});
-
-// 重启 Bot
-app.post('/api/restart', async (req, res) => {
-  try {
-    await startBot();
-    res.json({ success: true, message: 'Bot restarted' });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -464,6 +522,15 @@ app.delete('/api/reminders/:id', (req, res) => {
   }
 });
 
+app.put('/api/reminders/:id', (req, res) => {
+  const reminder = storage.updateReminder(req.params.id, req.body);
+  if (!reminder) {
+    return res.status(404).json({ success: false, error: '提醒不存在' });
+  }
+  storage.addLog('info', `更新提醒: ${req.params.id}`, 'reminder');
+  res.json({ success: true, data: reminder });
+});
+
 // ... (Logs API omitted) ...
 
 async function checkReminders(bot) {
@@ -690,36 +757,64 @@ app.get('/api/tools/stats', (req, res) => {
   res.json({ success: true, data: stats });
 });
 
-// ==================== Reminders API ====================
+// ==================== Scheduled Tasks API ====================
 
-app.get('/api/reminders', (req, res) => {
-  const reminders = storage.getReminders();
-  res.json({ success: true, data: reminders });
-});
+app.get('/api/scheduled-tasks', (req, res) => {
+  const settings = loadSettings();
+  const tasks = [];
 
-app.post('/api/reminders', (req, res) => {
-  const { content, triggerAt, repeat } = req.body;
-  if (!content || !triggerAt) {
-    return res.status(400).json({ success: false, error: '缺少必要字段' });
+  // 1. RSS 订阅检查任务
+  const subscriptions = scheduler?.getSubscriptions() || [];
+  for (const sub of subscriptions) {
+    if (sub.enabled) {
+      const lastCheck = sub.lastCheck ? new Date(sub.lastCheck) : null;
+      const intervalMs = (sub.interval || 30) * 60 * 1000;
+      const nextCheck = lastCheck ? new Date(lastCheck.getTime() + intervalMs) : new Date();
+
+      tasks.push({
+        id: `rss_${sub.id}`,
+        type: 'rss',
+        name: `RSS: ${sub.title}`,
+        description: `检查订阅 "${sub.title}"`,
+        interval: `${sub.interval} 分钟`,
+        lastRun: sub.lastCheck || null,
+        nextRun: nextCheck.toISOString(),
+        status: sub.lastError ? 'error' : 'active',
+        error: sub.lastError || null,
+      });
+    }
   }
-  const reminder = storage.addReminder(content, triggerAt, repeat);
-  res.json({ success: true, data: reminder });
-});
 
-app.put('/api/reminders/:id', (req, res) => {
-  const reminder = storage.updateReminder(req.params.id, req.body);
-  if (!reminder) {
-    return res.status(404).json({ success: false, error: '提醒不存在' });
-  }
-  res.json({ success: true, data: reminder });
-});
+  // 2. 提醒检查任务 (每分钟)
+  tasks.push({
+    id: 'reminder_check',
+    type: 'system',
+    name: '提醒检查器',
+    description: '检查并发送到期的提醒',
+    interval: '1 分钟',
+    lastRun: null,
+    nextRun: null,
+    status: settings.features?.reminders ? 'active' : 'paused',
+    error: null,
+  });
 
-app.delete('/api/reminders/:id', (req, res) => {
-  const deleted = storage.deleteReminder(req.params.id);
-  if (!deleted) {
-    return res.status(404).json({ success: false, error: '提醒不存在' });
+  // 3. WebDAV 自动备份任务
+  const webdavConfig = settings.webdav || {};
+  if (webdavConfig.autoBackup && webdavConfig.url) {
+    tasks.push({
+      id: 'webdav_backup',
+      type: 'backup',
+      name: 'WebDAV 自动备份',
+      description: '备份数据到 WebDAV 服务器',
+      interval: `${webdavConfig.autoBackupInterval || 24} 小时`,
+      lastRun: null,
+      nextRun: null,
+      status: 'active',
+      error: null,
+    });
   }
-  res.json({ success: true });
+
+  res.json({ success: true, data: tasks });
 });
 
 // ==================== Notes API ====================
@@ -1068,10 +1163,14 @@ async function startBot() {
     // 推送新内容
     for (const item of newItems.slice(0, 5)) { // 最多推送 5 条
       try {
-        // 简洁格式：来源 + 标题 + 链接
-        const message = `📰 <b>${subscription.title}</b>\n` +
-          `${item.title}\n` +
-          `${item.link}`;
+        // 使用消息模板
+        const template = globalRss.messageTemplate || '📰 <b>{feed_title}</b>\n{title}\n{link}';
+        const message = template
+          .replace(/{feed_title}/g, subscription.title || '')
+          .replace(/{title}/g, item.title || '')
+          .replace(/{link}/g, item.link || '')
+          .replace(/{description}/g, (item.description || '').substring(0, 200))
+          .replace(/{date}/g, item.pubDate ? new Date(item.pubDate).toLocaleString('zh-CN') : '');
 
         await telegramApi.sendMessage(targetChatId, message, {
           parse_mode: 'HTML',
