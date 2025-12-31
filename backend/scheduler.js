@@ -134,6 +134,16 @@ class RssScheduler {
     }
 
     const oldSub = subscriptions[index];
+
+    // 如果 URL 发生变化，重置首次检查标志并清除已读记录
+    if (updates.url && updates.url !== oldSub.url) {
+      updates.isFirstCheck = true;
+      // 清除该订阅的已读项目，因为新 URL 是完全不同的 feed
+      this.seenItems.delete(id);
+      this.saveSeenItems();
+      this.logger.info(`🔄 订阅 [${oldSub.title}] URL 已更改，重置检查状态`);
+    }
+
     const newSub = { ...oldSub, ...updates, id };
     subscriptions[index] = newSub;
     this.saveSubscriptions(subscriptions);

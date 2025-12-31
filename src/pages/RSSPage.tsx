@@ -1005,14 +1005,20 @@ const RSSPage = () => {
                   <Label>标题</Label>
                   <Input
                     value={selectedFeed.title}
-                    onChange={(e) => setSelectedFeed({ ...selectedFeed, title: e.target.value })}
+                    onChange={(e) => {
+                      const newTitle = e.target.value;
+                      setSelectedFeed(prev => prev ? { ...prev, title: newTitle } : prev);
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>RSS URL</Label>
                   <Input
                     value={selectedFeed.url}
-                    onChange={(e) => setSelectedFeed({ ...selectedFeed, url: e.target.value })}
+                    onChange={(e) => {
+                      const newUrl = e.target.value;
+                      setSelectedFeed(prev => prev ? { ...prev, url: newUrl } : prev);
+                    }}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1021,7 +1027,10 @@ const RSSPage = () => {
                     <Input
                       type="number"
                       value={selectedFeed.interval}
-                      onChange={(e) => setSelectedFeed({ ...selectedFeed, interval: parseInt(e.target.value) || 30 })}
+                      onChange={(e) => {
+                        const newInterval = parseInt(e.target.value) || 30;
+                        setSelectedFeed(prev => prev ? { ...prev, interval: newInterval } : prev);
+                      }}
                       min={5}
                     />
                   </div>
@@ -1029,7 +1038,7 @@ const RSSPage = () => {
                     <Label>分组</Label>
                     <Select
                       value={selectedFeed.groupId || ""}
-                      onValueChange={(v) => setSelectedFeed({ ...selectedFeed, groupId: v })}
+                      onValueChange={(v) => setSelectedFeed(prev => prev ? { ...prev, groupId: v } : prev)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="选择分组" />
@@ -1081,7 +1090,7 @@ const RSSPage = () => {
                     </div>
                     <Switch
                       checked={selectedFeed.pushEnabled ?? true}
-                      onCheckedChange={(checked) => setSelectedFeed({ ...selectedFeed, pushEnabled: checked })}
+                      onCheckedChange={(checked) => setSelectedFeed(prev => prev ? { ...prev, pushEnabled: checked } : prev)}
                     />
                   </div>
                   <div className="flex items-center justify-between">
@@ -1090,14 +1099,14 @@ const RSSPage = () => {
                     </div>
                     <Switch
                       checked={selectedFeed.quietHours?.enabled ?? false}
-                      onCheckedChange={(checked) => setSelectedFeed({
-                        ...selectedFeed,
+                      onCheckedChange={(checked) => setSelectedFeed(prev => prev ? {
+                        ...prev,
                         quietHours: {
                           enabled: checked,
-                          start: selectedFeed.quietHours?.start || "22:00",
-                          end: selectedFeed.quietHours?.end || "08:00"
+                          start: prev.quietHours?.start || "22:00",
+                          end: prev.quietHours?.end || "08:00"
                         }
-                      })}
+                      } : prev)}
                     />
                   </div>
                   {selectedFeed.quietHours?.enabled && (
@@ -1107,10 +1116,10 @@ const RSSPage = () => {
                         <Input
                           type="time"
                           value={selectedFeed.quietHours.start}
-                          onChange={(e) => setSelectedFeed({
-                            ...selectedFeed,
-                            quietHours: { ...selectedFeed.quietHours!, start: e.target.value }
-                          })}
+                          onChange={(e) => setSelectedFeed(prev => prev ? {
+                            ...prev,
+                            quietHours: { ...prev.quietHours!, start: e.target.value }
+                          } : prev)}
                         />
                       </div>
                       <div className="space-y-1">
@@ -1118,10 +1127,10 @@ const RSSPage = () => {
                         <Input
                           type="time"
                           value={selectedFeed.quietHours.end}
-                          onChange={(e) => setSelectedFeed({
-                            ...selectedFeed,
-                            quietHours: { ...selectedFeed.quietHours!, end: e.target.value }
-                          })}
+                          onChange={(e) => setSelectedFeed(prev => prev ? {
+                            ...prev,
+                            quietHours: { ...prev.quietHours!, end: e.target.value }
+                          } : prev)}
                         />
                       </div>
                     </div>
