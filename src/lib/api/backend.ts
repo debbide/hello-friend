@@ -583,6 +583,54 @@ export const scheduledTasksApi = {
   },
 };
 
+// ==================== Trending API ====================
+
+export interface TrendingSource {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  enabled: boolean;
+}
+
+export interface TrendingItem {
+  rank: number;
+  title: string;
+  hot: string | number;
+  url: string;
+  tag: string;
+}
+
+export interface TrendingData {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  items: TrendingItem[];
+  updatedAt: string;
+}
+
+export const trendingApi = {
+  async getSources(): Promise<ApiResponse<TrendingSource[]>> {
+    return request<TrendingSource[]>('/api/trending/sources');
+  },
+
+  async getAll(): Promise<ApiResponse<Record<string, TrendingData>>> {
+    return request<Record<string, TrendingData>>('/api/trending');
+  },
+
+  async getBySource(source: string): Promise<ApiResponse<TrendingData>> {
+    return request<TrendingData>(`/api/trending/${source}`);
+  },
+
+  async push(source: string, limit: number = 10): Promise<ApiResponse<{ message: string }>> {
+    return request(`/api/trending/${source}/push`, {
+      method: 'POST',
+      body: JSON.stringify({ limit }),
+    });
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -605,4 +653,5 @@ export default {
   tools: toolsApi,
   auth: authApi,
   scheduledTasks: scheduledTasksApi,
+  trending: trendingApi,
 };

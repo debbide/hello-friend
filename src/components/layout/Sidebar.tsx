@@ -14,6 +14,7 @@ import {
   Send,
   BellRing,
   Timer,
+  Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "仪表盘", emoji: "📊" },
   { to: "/ai-chat", icon: MessageSquareText, label: "AI 对话", emoji: "🤖" },
   { to: "/rss", icon: Rss, label: "RSS 订阅", emoji: "📰" },
+  { to: "/trending", icon: Flame, label: "热榜聚合", emoji: "🔥" },
   { to: "/tools", icon: Wrench, label: "实用工具", emoji: "🛠️" },
   { to: "/reminders", icon: Bell, label: "备忘提醒", emoji: "⏰" },
   { to: "/scheduled-tasks", icon: Timer, label: "定时任务", emoji: "🕐" },
