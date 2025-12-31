@@ -631,6 +631,74 @@ export const trendingApi = {
   },
 };
 
+// ==================== Price Monitor API ====================
+
+export interface PriceMonitorItem {
+  id: string;
+  name: string;
+  url: string;
+  selector: string;
+  interval: number;
+  enabled: boolean;
+  notifyOnAnyChange: boolean;
+  notifyOnDrop: boolean;
+  dropThreshold: number;
+  targetPrice: number | null;
+  currentPrice: number | null;
+  lastPrice: number | null;
+  lastCheck: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface PriceHistory {
+  price: number;
+  timestamp: string;
+}
+
+export const priceMonitorApi = {
+  async list(): Promise<ApiResponse<PriceMonitorItem[]>> {
+    return request<PriceMonitorItem[]>('/api/price-monitors');
+  },
+
+  async get(id: string): Promise<ApiResponse<PriceMonitorItem>> {
+    return request<PriceMonitorItem>(`/api/price-monitors/${id}`);
+  },
+
+  async getHistory(id: string): Promise<ApiResponse<PriceHistory[]>> {
+    return request<PriceHistory[]>(`/api/price-monitors/${id}/history`);
+  },
+
+  async create(item: Partial<PriceMonitorItem>): Promise<ApiResponse<PriceMonitorItem>> {
+    return request('/api/price-monitors', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  },
+
+  async update(id: string, updates: Partial<PriceMonitorItem>): Promise<ApiResponse<PriceMonitorItem>> {
+    return request(`/api/price-monitors/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async delete(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/price-monitors/${id}`, { method: 'DELETE' });
+  },
+
+  async refresh(id: string): Promise<ApiResponse<PriceMonitorItem>> {
+    return request(`/api/price-monitors/${id}/refresh`, { method: 'POST' });
+  },
+
+  async test(url: string, selector: string): Promise<ApiResponse<{ price: number }>> {
+    return request('/api/price-monitors/test', {
+      method: 'POST',
+      body: JSON.stringify({ url, selector }),
+    });
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -654,4 +722,5 @@ export default {
   auth: authApi,
   scheduledTasks: scheduledTasksApi,
   trending: trendingApi,
+  priceMonitor: priceMonitorApi,
 };

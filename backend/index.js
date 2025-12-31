@@ -930,6 +930,145 @@ app.post('/api/trending/:source/push', async (req, res) => {
   }
 });
 
+// ==================== Price Monitor API ====================
+
+const PriceMonitor = require('./price-monitor');
+
+// 初始化价格监控器
+let priceMonitor = null;
+
+function initPriceMonitor() {
+  if (priceMonitor) return;
+
+  priceMonitor = new PriceMonitor(logger, async (data) => {
+    // 价格变动回调 - 推送到 Telegram
+    if (!currentBot) return;
+
+    try {
+      const settings = loadSettings();
+      const chatId = settings.adminId;
+      if (!chatId) return;
+
+      const message = priceMonitor.formatPriceChangeMessage(data);
+      await currentBot.telegram.sendMessage(chatId, message, {
+        parse_mode: 'HTML',
+        disable_web_page_preview: false,
+      });
+
+      storage.addLog('info', `价格变动提醒: ${data.item.name} ¥${data.oldPrice} → ¥${data.newPrice}`, 'price');
+    } catch (error) {
+      logger.error(`推送价格变动失败: ${error.message}`);
+    }
+  });
+
+  priceMonitor.startAll();
+}
+
+// 在服务启动时初始化
+setTimeout(initPriceMonitor, 3000);
+
+// 获取所有监控项
+app.get('/api/price-monitors', (req, res) => {
+  initPriceMonitor();
+  const items = priceMonitor.getItems();
+  res.json({ success: true, data: items });
+});
+
+// 获取单个监控项
+app.get('/api/price-monitors/:id', (req, res) => {
+  initPriceMonitor();
+  const items = priceMonitor.getItems();
+  const item = items.find(i => i.id === req.params.id);
+  if (!item) {
+    return res.status(404).json({ success: false, error: '监控项不存在' });
+  }
+  res.json({ success: true, data: item });
+});
+
+// 获取价格历史
+app.get('/api/price-monitors/:id/history', (req, res) => {
+  initPriceMonitor();
+  const history = priceMonitor.getHistory(req.params.id);
+  res.json({ success: true, data: history });
+});
+
+// 添加监控项
+app.post('/api/price-monitors', (req, res) => {
+  initPriceMonitor();
+  const { url, selector, name, interval, targetPrice, notifyOnAnyChange, notifyOnDrop, dropThreshold } = req.body;
+
+  if (!url || !selector) {
+    return res.status(400).json({ success: false, error: '请提供商品链接和价格选择器' });
+  }
+
+  try {
+    const item = priceMonitor.addItem({
+      url,
+      selector,
+      name,
+      interval: interval || 60,
+      targetPrice: targetPrice || null,
+      notifyOnAnyChange: notifyOnAnyChange !== false,
+      notifyOnDrop: notifyOnDrop || false,
+      dropThreshold: dropThreshold || 0,
+    });
+    res.json({ success: true, data: item });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 更新监控项
+app.put('/api/price-monitors/:id', (req, res) => {
+  initPriceMonitor();
+  const item = priceMonitor.updateItem(req.params.id, req.body);
+  if (!item) {
+    return res.status(404).json({ success: false, error: '监控项不存在' });
+  }
+  res.json({ success: true, data: item });
+});
+
+// 删除监控项
+app.delete('/api/price-monitors/:id', (req, res) => {
+  initPriceMonitor();
+  const deleted = priceMonitor.deleteItem(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: '监控项不存在' });
+  }
+  res.json({ success: true });
+});
+
+// 手动刷新价格
+app.post('/api/price-monitors/:id/refresh', async (req, res) => {
+  initPriceMonitor();
+  try {
+    const item = await priceMonitor.refreshItem(req.params.id);
+    res.json({ success: true, data: item });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 测试价格提取
+app.post('/api/price-monitors/test', async (req, res) => {
+  initPriceMonitor();
+  const { url, selector } = req.body;
+
+  if (!url || !selector) {
+    return res.status(400).json({ success: false, error: '请提供商品链接和价格选择器' });
+  }
+
+  try {
+    const price = await priceMonitor.fetchPrice(url, selector);
+    if (price === null) {
+      return res.json({ success: false, error: '无法提取价格，请检查选择器是否正确' });
+    }
+    res.json({ success: true, data: { price } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==================== Notes API ====================
 
 app.get('/api/notes', (req, res) => {

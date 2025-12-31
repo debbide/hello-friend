@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import AIChatPage from "./pages/AIChatPage";
 import RSSPage from "./pages/RSSPage";
 import TrendingPage from "./pages/TrendingPage";
+import PriceMonitorPage from "./pages/PriceMonitorPage";
 import ToolsPage from "./pages/ToolsPage";
 import RemindersPage from "./pages/RemindersPage";
 import LogsPage from "./pages/LogsPage";
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/ai-chat" element={<AIChatPage />} />
               <Route path="/rss" element={<RSSPage />} />
               <Route path="/trending" element={<TrendingPage />} />
+              <Route path="/price-monitor" element={<PriceMonitorPage />} />
               <Route path="/tools" element={<ToolsPage />} />
               <Route path="/reminders" element={<RemindersPage />} />
               <Route path="/logs" element={<LogsPage />} />
