@@ -17,11 +17,6 @@ function setup(bot, { logger }) {
     { command: 'ip', description: '🌍 IP 查询' },
     { command: 'short', description: '🔗 短链接生成' },
     { command: 'id', description: '🆔 获取 ID' },
-    { command: 'nshelp', description: '🎰 NodeSeek 抽奖帮助' },
-    { command: 'bindns', description: '🔗 绑定 NodeSeek 用户名' },
-    { command: 'nsstatus', description: '📋 查看绑定状态' },
-    { command: 'watchns', description: '👁️ 添加抽奖监控' },
-    { command: 'nslist', description: '📜 查看监控列表' },
   ];
 
   // 启动时设置菜单
