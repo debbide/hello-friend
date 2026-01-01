@@ -13,7 +13,6 @@ const RssScheduler = require('./scheduler');
 const { parseRssFeed } = require('./rss-parser');
 const { closeBrowser } = require('./puppeteer.service');
 const storage = require('./storage');
-const NodeSeekLotteryMonitor = require('./nodeseek-lottery');
 
 // Logger setup
 const logger = winston.createLogger({
@@ -30,7 +29,6 @@ const logger = winston.createLogger({
 const app = express();
 let currentBot = null;
 let scheduler = null;
-let nodeseekMonitor = null;
 
 // Middleware
 app.use(cors());
@@ -1071,139 +1069,6 @@ app.post('/api/price-monitors/test', async (req, res) => {
   }
 });
 
-// ==================== NodeSeek 抽奖监控 API ====================
-
-// 初始化 NodeSeek 抽奖监控器
-function initNodeSeekMonitor() {
-  if (nodeseekMonitor) return;
-
-  nodeseekMonitor = new NodeSeekLotteryMonitor(logger, async (data) => {
-    // 中奖回调 - 推送到绑定用户的 Telegram
-    if (!currentBot) return;
-
-    try {
-      const message = nodeseekMonitor.formatWinnerMessage(data);
-      await currentBot.telegram.sendMessage(data.telegramId, message, {
-        parse_mode: 'HTML',
-        disable_web_page_preview: false,
-      });
-
-      storage.addLog('info', `NodeSeek 中奖通知: ${data.winner.username} -> TG ${data.telegramId}`, 'nodeseek');
-    } catch (error) {
-      logger.error(`推送中奖通知失败: ${error.message}`);
-      storage.addLog('error', `推送中奖通知失败: ${error.message}`, 'nodeseek');
-    }
-  });
-
-  nodeseekMonitor.start();
-}
-
-// 在服务启动时初始化
-setTimeout(initNodeSeekMonitor, 5000);
-
-// 获取所有监控的抽奖帖
-app.get('/api/nodeseek/lotteries', (req, res) => {
-  initNodeSeekMonitor();
-  const lotteries = storage.getNodeSeekLotteries();
-  res.json({ success: true, data: lotteries });
-});
-
-// 获取单个抽奖帖详情（包含中奖者）
-app.get('/api/nodeseek/lotteries/:postId', async (req, res) => {
-  initNodeSeekMonitor();
-  try {
-    const details = await nodeseekMonitor.getLotteryDetails(req.params.postId);
-    if (!details) {
-      return res.status(404).json({ success: false, error: '抽奖帖不存在' });
-    }
-    res.json({ success: true, data: details });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 添加抽奖帖监控
-app.post('/api/nodeseek/lotteries', (req, res) => {
-  initNodeSeekMonitor();
-  const { url, title } = req.body;
-
-  if (!url) {
-    return res.status(400).json({ success: false, error: '请提供抽奖链接' });
-  }
-
-  // 解析帖子 ID
-  let postId = null;
-  let luckyUrl = null;
-
-  // 尝试从 lucky 链接解析
-  const luckyMatch = url.match(/[?&]post=(\d+)/);
-  if (luckyMatch) {
-    postId = luckyMatch[1];
-    luckyUrl = url;
-  }
-
-  // 尝试从帖子链接解析
-  const postMatch = url.match(/post-(\d+)/);
-  if (postMatch) {
-    postId = postMatch[1];
-  }
-
-  if (!postId) {
-    return res.status(400).json({ success: false, error: '无法解析帖子 ID，请检查链接格式' });
-  }
-
-  const result = storage.addNodeSeekLottery(postId, title || `帖子 #${postId}`, luckyUrl || url);
-
-  if (result.success) {
-    storage.addLog('info', `NodeSeek 添加监控: 帖子 #${postId}`, 'nodeseek');
-    res.json({ success: true, data: result.data });
-  } else {
-    res.status(400).json({ success: false, error: result.error });
-  }
-});
-
-// 删除抽奖帖监控
-app.delete('/api/nodeseek/lotteries/:postId', (req, res) => {
-  initNodeSeekMonitor();
-  const deleted = storage.deleteNodeSeekLottery(req.params.postId);
-
-  if (deleted) {
-    storage.addLog('info', `NodeSeek 取消监控: 帖子 #${req.params.postId}`, 'nodeseek');
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false, error: '未找到该帖子的监控记录' });
-  }
-});
-
-// 手动刷新单个抽奖帖
-app.post('/api/nodeseek/lotteries/:postId/refresh', async (req, res) => {
-  initNodeSeekMonitor();
-  try {
-    await nodeseekMonitor.refreshLottery(req.params.postId);
-    const details = await nodeseekMonitor.getLotteryDetails(req.params.postId);
-    res.json({ success: true, data: details });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 刷新所有抽奖帖
-app.post('/api/nodeseek/lotteries/refresh-all', async (req, res) => {
-  initNodeSeekMonitor();
-  try {
-    await nodeseekMonitor.checkAllLotteries();
-    res.json({ success: true, message: '刷新完成' });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 获取所有绑定的用户
-app.get('/api/nodeseek/bindings', (req, res) => {
-  const bindings = storage.getAllNodeSeekUsernames();
-  res.json({ success: true, data: bindings });
-});
-
 // ==================== Notes API ====================
 
 app.get('/api/notes', (req, res) => {
@@ -1664,7 +1529,6 @@ stopSignals.forEach(signal => {
   process.once(signal, async () => {
     logger.info('正在关闭服务...');
     scheduler?.stopAll();
-    nodeseekMonitor?.stop();
     if (currentBot) {
       await currentBot.stop(signal);
     }
