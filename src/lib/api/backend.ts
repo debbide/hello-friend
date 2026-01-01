@@ -768,7 +768,7 @@ export const githubApi = {
   async create(owner: string, repo: string, watchTypes: string[] = ['release']): Promise<ApiResponse<GitHubRepo>> {
     return request('/api/github/repos', {
       method: 'POST',
-      body: JSON.stringify({ owner, repo, watchTypes }),
+      body: JSON.stringify({ repo: `${owner}/${repo}`, watchTypes }),
     });
   },
 
