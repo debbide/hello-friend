@@ -11,7 +11,6 @@ import AIChatPage from "./pages/AIChatPage";
 import RSSPage from "./pages/RSSPage";
 import TrendingPage from "./pages/TrendingPage";
 import PriceMonitorPage from "./pages/PriceMonitorPage";
-import NodeSeekPage from "./pages/NodeSeekPage";
 import ToolsPage from "./pages/ToolsPage";
 import RemindersPage from "./pages/RemindersPage";
 import LogsPage from "./pages/LogsPage";
@@ -45,7 +44,6 @@ const App = () => (
               <Route path="/rss" element={<RSSPage />} />
               <Route path="/trending" element={<TrendingPage />} />
               <Route path="/price-monitor" element={<PriceMonitorPage />} />
-              <Route path="/nodeseek" element={<NodeSeekPage />} />
               <Route path="/tools" element={<ToolsPage />} />
               <Route path="/reminders" element={<RemindersPage />} />
               <Route path="/logs" element={<LogsPage />} />

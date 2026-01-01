@@ -30,7 +30,6 @@ function loadCommands(bot, ctx) {
   require('./menu').setup(bot, ctx);       // 命令菜单注册
   require('./translate').setup(bot, ctx);  // 翻译
   require('./note').setup(bot, ctx);       // 备忘录
-  require('./nodeseek').setup(bot, ctx);   // NodeSeek 抽奖监控
 
   logger.info('✅ 所有命令模块已加载');
 }
