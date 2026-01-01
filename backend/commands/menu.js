@@ -17,6 +17,9 @@ function setup(bot, { logger }) {
     { command: 'ip', description: '🌍 IP 查询' },
     { command: 'short', description: '🔗 短链接生成' },
     { command: 'id', description: '🆔 获取 ID' },
+    { command: 'ghhelp', description: '🐙 GitHub 监控帮助' },
+    { command: 'ghwatch', description: '👁️ 监控 GitHub 仓库' },
+    { command: 'ghlist', description: '📋 查看监控列表' },
   ];
 
   // 启动时设置菜单

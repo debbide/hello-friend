@@ -263,6 +263,105 @@ function getDataPath() {
     return DATA_PATH;
 }
 
+// ==================== GitHub 监控存储 ====================
+
+function getGithubRepos() {
+    return loadData('github-repos.json', []);
+}
+
+function saveGithubRepos(repos) {
+    saveData('github-repos.json', repos);
+}
+
+// 添加 GitHub 仓库监控
+function addGithubRepo(owner, repo, watchTypes = ['release']) {
+    const repos = getGithubRepos();
+    const fullName = `${owner}/${repo}`;
+
+    // 检查是否已存在
+    if (repos.some(r => r.fullName.toLowerCase() === fullName.toLowerCase())) {
+        return { success: false, error: '该仓库已在监控中' };
+    }
+
+    const repoData = {
+        id: `gh_${Date.now()}`,
+        owner,
+        repo,
+        fullName,
+        watchTypes,  // ['release', 'issue', 'star', 'fork', 'commit']
+        lastRelease: null,
+        lastIssue: null,
+        lastStar: null,
+        lastCheck: null,
+        createdAt: new Date().toISOString(),
+    };
+
+    repos.push(repoData);
+    saveGithubRepos(repos);
+    return { success: true, data: repoData };
+}
+
+// 更新 GitHub 仓库监控
+function updateGithubRepo(id, updates) {
+    const repos = getGithubRepos();
+    const index = repos.findIndex(r => r.id === id);
+    if (index === -1) return null;
+    repos[index] = { ...repos[index], ...updates };
+    saveGithubRepos(repos);
+    return repos[index];
+}
+
+// 通过 fullName 更新
+function updateGithubRepoByName(fullName, updates) {
+    const repos = getGithubRepos();
+    const index = repos.findIndex(r => r.fullName.toLowerCase() === fullName.toLowerCase());
+    if (index === -1) return null;
+    repos[index] = { ...repos[index], ...updates };
+    saveGithubRepos(repos);
+    return repos[index];
+}
+
+// 删除 GitHub 仓库监控
+function deleteGithubRepo(id) {
+    const repos = getGithubRepos();
+    const filtered = repos.filter(r => r.id !== id);
+    if (filtered.length === repos.length) return false;
+    saveGithubRepos(filtered);
+    return true;
+}
+
+// 通过 fullName 删除
+function deleteGithubRepoByName(fullName) {
+    const repos = getGithubRepos();
+    const filtered = repos.filter(r => r.fullName.toLowerCase() !== fullName.toLowerCase());
+    if (filtered.length === repos.length) return false;
+    saveGithubRepos(filtered);
+    return true;
+}
+
+// 获取 GitHub 通知历史
+function getGithubNotifications() {
+    return loadData('github-notifications.json', []);
+}
+
+function addGithubNotification(repoFullName, type, data) {
+    const notifications = getGithubNotifications();
+    const notification = {
+        id: `ghn_${Date.now()}`,
+        repoFullName,
+        type,  // 'release', 'issue', 'star', etc.
+        data,
+        createdAt: new Date().toISOString(),
+    };
+    notifications.unshift(notification);
+    // 只保留最近 200 条
+    while (notifications.length > 200) {
+        notifications.pop();
+    }
+    saveData('github-notifications.json', notifications);
+    return notification;
+}
+
 module.exports = {
     // 日志
     getLogs,
@@ -289,4 +388,13 @@ module.exports = {
     // 备份
     createBackup,
     getDataPath,
+    // GitHub 监控
+    getGithubRepos,
+    addGithubRepo,
+    updateGithubRepo,
+    updateGithubRepoByName,
+    deleteGithubRepo,
+    deleteGithubRepoByName,
+    getGithubNotifications,
+    addGithubNotification,
 };

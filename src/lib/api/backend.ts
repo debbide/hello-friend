@@ -699,6 +699,107 @@ export const priceMonitorApi = {
   },
 };
 
+// ==================== GitHub Monitor API ====================
+
+export interface GitHubRepo {
+  id: string;
+  owner: string;
+  repo: string;
+  fullName: string;
+  watchTypes: string[];
+  lastRelease: {
+    tag: string;
+    publishedAt: string;
+  } | null;
+  lastStar: number | null;
+  lastCheck: string | null;
+  createdAt: string;
+}
+
+export interface GitHubNotification {
+  id: string;
+  repoFullName: string;
+  type: 'release' | 'star_milestone';
+  data: {
+    tag?: string;
+    name?: string;
+    body?: string;
+    url?: string;
+    publishedAt?: string;
+    milestone?: number;
+    currentStars?: number;
+  };
+  createdAt: string;
+}
+
+export interface GitHubRepoInfo {
+  fullName: string;
+  full_name?: string;
+  description: string;
+  stars: number;
+  stargazers_count?: number;
+  forks: number;
+  forks_count?: number;
+  watchers: number;
+  watchers_count?: number;
+  language: string;
+  url: string;
+  html_url?: string;
+  latestRelease?: {
+    tag: string;
+    tag_name?: string;
+    name: string;
+    publishedAt: string;
+    published_at?: string;
+    url: string;
+    html_url?: string;
+  };
+}
+
+export const githubApi = {
+  async list(): Promise<ApiResponse<GitHubRepo[]>> {
+    return request<GitHubRepo[]>('/api/github/repos');
+  },
+
+  async get(id: string): Promise<ApiResponse<GitHubRepo>> {
+    return request<GitHubRepo>(`/api/github/repos/${id}`);
+  },
+
+  async create(owner: string, repo: string, watchTypes: string[] = ['release']): Promise<ApiResponse<GitHubRepo>> {
+    return request('/api/github/repos', {
+      method: 'POST',
+      body: JSON.stringify({ owner, repo, watchTypes }),
+    });
+  },
+
+  async update(id: string, updates: Partial<GitHubRepo>): Promise<ApiResponse<GitHubRepo>> {
+    return request(`/api/github/repos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async delete(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/github/repos/${id}`, { method: 'DELETE' });
+  },
+
+  async refresh(id: string): Promise<ApiResponse<GitHubRepo>> {
+    return request(`/api/github/repos/${id}/refresh`, { method: 'POST' });
+  },
+
+  async refreshAll(): Promise<ApiResponse<{ message: string }>> {
+    return request('/api/github/refresh-all', { method: 'POST' });
+  },
+
+  async getNotifications(): Promise<ApiResponse<GitHubNotification[]>> {
+    return request<GitHubNotification[]>('/api/github/notifications');
+  },
+
+  async search(owner: string, repo: string): Promise<ApiResponse<GitHubRepoInfo>> {
+    return request<GitHubRepoInfo>(`/api/github/search?repo=${owner}/${repo}`);
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -723,4 +824,5 @@ export default {
   scheduledTasks: scheduledTasksApi,
   trending: trendingApi,
   priceMonitor: priceMonitorApi,
+  github: githubApi,
 };
