@@ -699,6 +699,62 @@ export const priceMonitorApi = {
   },
 };
 
+// ==================== NodeSeek Lottery API ====================
+
+export interface NodeSeekLottery {
+  id: string;
+  postId: string;
+  title: string;
+  luckyUrl: string;
+  winners: string[];
+  lastCheck: string | null;
+  createdAt: string;
+  currentWinners?: Array<{
+    username: string;
+    prize: string;
+    position: number;
+  }>;
+  error?: string;
+}
+
+export interface NodeSeekBinding {
+  telegramId: string;
+  username: string;
+}
+
+export const nodeseekApi = {
+  async listLotteries(): Promise<ApiResponse<NodeSeekLottery[]>> {
+    return request<NodeSeekLottery[]>('/api/nodeseek/lotteries');
+  },
+
+  async getLottery(postId: string): Promise<ApiResponse<NodeSeekLottery>> {
+    return request<NodeSeekLottery>(`/api/nodeseek/lotteries/${postId}`);
+  },
+
+  async createLottery(url: string, title?: string): Promise<ApiResponse<NodeSeekLottery>> {
+    return request('/api/nodeseek/lotteries', {
+      method: 'POST',
+      body: JSON.stringify({ url, title }),
+    });
+  },
+
+  async deleteLottery(postId: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/nodeseek/lotteries/${postId}`, { method: 'DELETE' });
+  },
+
+  async refreshLottery(postId: string): Promise<ApiResponse<NodeSeekLottery>> {
+    return request(`/api/nodeseek/lotteries/${postId}/refresh`, { method: 'POST' });
+  },
+
+  async refreshAll(): Promise<ApiResponse<{ message: string }>> {
+    return request('/api/nodeseek/lotteries/refresh-all', { method: 'POST' });
+  },
+
+  async getBindings(): Promise<ApiResponse<NodeSeekBinding[]>> {
+    return request<NodeSeekBinding[]>('/api/nodeseek/bindings');
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -723,4 +779,5 @@ export default {
   scheduledTasks: scheduledTasksApi,
   trending: trendingApi,
   priceMonitor: priceMonitorApi,
+  nodeseek: nodeseekApi,
 };
