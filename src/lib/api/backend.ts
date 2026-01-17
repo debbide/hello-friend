@@ -933,6 +933,27 @@ export const stickerPacksApi = {
     return request('/api/sticker-packs');
   },
 
+  // 获取贴纸包内容（从 Telegram 获取）
+  async getStickers(packName: string): Promise<ApiResponse<{
+    name: string;
+    title: string;
+    stickerType: string;
+    isAnimated: boolean;
+    isVideo: boolean;
+    stickers: Array<{
+      fileId: string;
+      emoji: string;
+      isAnimated: boolean;
+      isVideo: boolean;
+      width: number;
+      height: number;
+      fileUrl?: string;
+      error?: string;
+    }>;
+  }>> {
+    return request(`/api/sticker-packs/${encodeURIComponent(packName)}/stickers`);
+  },
+
   // 删除贴纸包（仅本地记录）
   async delete(packName: string): Promise<ApiResponse<{ success: boolean }>> {
     return request(`/api/sticker-packs/${encodeURIComponent(packName)}`, { method: 'DELETE' });

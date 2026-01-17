@@ -1338,6 +1338,64 @@ app.delete('/api/sticker-packs/:name', (req, res) => {
   res.json({ success: true });
 });
 
+// 获取贴纸包内的所有贴纸（从 Telegram 获取）
+app.get('/api/sticker-packs/:name/stickers', async (req, res) => {
+  if (!currentBot) {
+    return res.status(503).json({ success: false, error: 'Bot 未运行' });
+  }
+
+  const packName = req.params.name;
+
+  try {
+    const fetch = require('node-fetch');
+
+    // 从 Telegram 获取贴纸包
+    const stickerSet = await currentBot.telegram.getStickerSet(packName);
+
+    // 获取每个贴纸的文件 URL
+    const stickersWithUrls = await Promise.all(
+      stickerSet.stickers.map(async (sticker) => {
+        try {
+          const file = await currentBot.telegram.getFile(sticker.file_id);
+          const fileUrl = `https://api.telegram.org/file/bot${currentBot.telegram.token}/${file.file_path}`;
+          return {
+            fileId: sticker.file_id,
+            emoji: sticker.emoji,
+            isAnimated: sticker.is_animated,
+            isVideo: sticker.is_video,
+            width: sticker.width,
+            height: sticker.height,
+            fileUrl: fileUrl,
+          };
+        } catch (e) {
+          return {
+            fileId: sticker.file_id,
+            emoji: sticker.emoji,
+            isAnimated: sticker.is_animated,
+            isVideo: sticker.is_video,
+            error: e.message,
+          };
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        name: stickerSet.name,
+        title: stickerSet.title,
+        stickerType: stickerSet.sticker_type,
+        isAnimated: stickerSet.is_animated,
+        isVideo: stickerSet.is_video,
+        stickers: stickersWithUrls,
+      }
+    });
+  } catch (error) {
+    logger.error(`获取贴纸包失败: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 获取所有贴纸
 app.get('/api/stickers', (req, res) => {
   const stickers = storage.getStickers();

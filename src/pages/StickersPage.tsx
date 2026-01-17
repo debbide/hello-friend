@@ -80,6 +80,18 @@ const StickersPage = () => {
     errors?: string[];
   } | null>(null);
 
+  // Pack preview states
+  const [isPackPreviewOpen, setIsPackPreviewOpen] = useState(false);
+  const [previewPack, setPreviewPack] = useState<StickerPack | null>(null);
+  const [previewStickers, setPreviewStickers] = useState<Array<{
+    fileId: string;
+    emoji: string;
+    isAnimated: boolean;
+    isVideo: boolean;
+    fileUrl?: string;
+  }>>([]);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -172,6 +184,22 @@ const StickersPage = () => {
     } else {
       toast.error(result.error || "删除失败");
     }
+  };
+
+  // 预览贴纸包
+  const handlePreviewPack = async (pack: StickerPack) => {
+    setPreviewPack(pack);
+    setPreviewStickers([]);
+    setIsPackPreviewOpen(true);
+    setIsLoadingPreview(true);
+
+    const result = await stickerPacksApi.getStickers(pack.name);
+    if (result.success && result.data) {
+      setPreviewStickers(result.data.stickers);
+    } else {
+      toast.error(result.error || "加载失败");
+    }
+    setIsLoadingPreview(false);
   };
 
   // 导出贴纸
@@ -483,6 +511,14 @@ const StickersPage = () => {
                           variant="outline"
                           size="sm"
                           className="flex-1"
+                          onClick={() => handlePreviewPack(pack)}
+                        >
+                          <StickerIcon className="w-4 h-4 mr-1" />
+                          预览
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           asChild
                         >
                           <a
@@ -490,8 +526,7 @@ const StickersPage = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            <ExternalLink className="w-4 h-4 mr-1" />
-                            查看
+                            <ExternalLink className="w-4 h-4" />
                           </a>
                         </Button>
                         <Button
@@ -797,6 +832,92 @@ const StickersPage = () => {
             ) : (
               <Button onClick={resetImportDialog}>关闭</Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pack Preview Dialog */}
+      <Dialog open={isPackPreviewOpen} onOpenChange={setIsPackPreviewOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {previewPack && (
+                <>
+                  <span>
+                    {previewPack.stickerType === 'animated' ? '✨' : previewPack.stickerType === 'video' ? '🎬' : '🖼️'}
+                  </span>
+                  {previewPack.title}
+                  <Badge variant="secondary" className="ml-2">
+                    {previewPack.stickerType === 'animated' ? '动态' : previewPack.stickerType === 'video' ? '视频' : '静态'}
+                  </Badge>
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {previewPack && `共 ${previewStickers.length || previewPack.stickerCount} 个贴纸`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-4">
+            {isLoadingPreview ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">加载中...</span>
+              </div>
+            ) : previewStickers.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                <p>无法加载贴纸内容</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
+                {previewStickers.map((sticker, index) => (
+                  <div
+                    key={sticker.fileId || index}
+                    className="aspect-square rounded-xl bg-accent/30 hover:bg-accent/50 transition-all flex items-center justify-center overflow-hidden"
+                    title={sticker.emoji}
+                  >
+                    {sticker.fileUrl ? (
+                      sticker.isVideo ? (
+                        <video
+                          src={sticker.fileUrl}
+                          className="w-full h-full object-contain"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={sticker.fileUrl}
+                          alt={sticker.emoji}
+                          className="w-full h-full object-contain"
+                          loading="lazy"
+                        />
+                      )
+                    ) : (
+                      <span className="text-2xl">{sticker.emoji || '🎨'}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {previewPack && (
+              <Button variant="outline" asChild>
+                <a
+                  href={`https://t.me/addstickers/${previewPack.name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  在 Telegram 中添加
+                </a>
+              </Button>
+            )}
+            <Button onClick={() => setIsPackPreviewOpen(false)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
