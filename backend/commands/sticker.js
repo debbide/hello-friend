@@ -47,10 +47,44 @@ function generateStickersButtons(stickers, page = 0) {
 function setup(bot, { logger, settings }) {
   const fetch = require('node-fetch');
 
+  // 辅助函数：获取贴纸类型
+  function getStickerType(sticker) {
+    if (sticker.is_animated) return 'animated';
+    if (sticker.is_video) return 'video';
+    return 'static';
+  }
+
+  // 辅助函数：获取类型标签
+  function getTypeLabel(type) {
+    switch (type) {
+      case 'animated': return '动态';
+      case 'video': return '视频';
+      default: return '静态';
+    }
+  }
+
   // 辅助函数：添加贴纸到贴纸包
   async function addStickerToPack(ctx, userIdNum, packName, sticker, silent = false) {
-    if (sticker.is_animated || sticker.is_video) {
-      if (!silent) await ctx.reply('❌ 暂不支持添加动态贴纸到贴纸包');
+    const userId = ctx.from.id.toString();
+    const pack = storage.getUserStickerPack(userId, packName);
+
+    if (!pack) {
+      if (!silent) await ctx.reply('❌ 贴纸包不存在');
+      return false;
+    }
+
+    const stickerType = getStickerType(sticker);
+
+    // 检查贴纸类型是否匹配
+    if (pack.stickerType && pack.stickerType !== stickerType) {
+      if (!silent) {
+        await ctx.reply(
+          `❌ 类型不匹配\n\n` +
+          `贴纸包类型: ${getTypeLabel(pack.stickerType)}\n` +
+          `当前贴纸: ${getTypeLabel(stickerType)}\n\n` +
+          `💡 不同类型的贴纸需要创建不同的贴纸包`
+        );
+      }
       return false;
     }
 
@@ -61,25 +95,25 @@ function setup(bot, { logger, settings }) {
       const response = await fetch(fileUrl);
       const buffer = await response.buffer();
 
-      await ctx.telegram.addStickerToSet(
-        userIdNum,
-        packName,
-        {
-          png_sticker: { source: buffer },
-          emojis: sticker.emoji || '😀',
-        }
-      );
+      // 根据贴纸类型使用不同的参数
+      let stickerParams = { emojis: sticker.emoji || '😀' };
 
-      // 更新贴纸包计数
-      const userId = ctx.from.id.toString();
-      const pack = storage.getUserStickerPack(userId, packName);
-      if (pack) {
-        storage.updateUserStickerPack(userId, packName, {
-          stickerCount: (pack.stickerCount || 0) + 1,
-        });
+      if (stickerType === 'animated') {
+        stickerParams.tgs_sticker = { source: buffer };
+      } else if (stickerType === 'video') {
+        stickerParams.webm_sticker = { source: buffer };
+      } else {
+        stickerParams.png_sticker = { source: buffer };
       }
 
-      logger.info(`添加贴纸到包: ${packName}`);
+      await ctx.telegram.addStickerToSet(userIdNum, packName, stickerParams);
+
+      // 更新贴纸包计数
+      storage.updateUserStickerPack(userId, packName, {
+        stickerCount: (pack.stickerCount || 0) + 1,
+      });
+
+      logger.info(`添加${getTypeLabel(stickerType)}贴纸到包: ${packName}`);
       return true;
     } catch (error) {
       logger.error(`添加贴纸失败: ${error.message}`);
@@ -105,10 +139,7 @@ function setup(bot, { logger, settings }) {
     if (pendingPack) {
       pendingPackCreation.delete(userId);
 
-      // 检查是否是动态贴纸
-      if (sticker.is_animated || sticker.is_video) {
-        return ctx.reply('❌ 暂不支持动态贴纸，请发送静态贴纸');
-      }
+      const stickerType = getStickerType(sticker);
 
       try {
         const botInfo = await ctx.telegram.getMe();
@@ -121,32 +152,42 @@ function setup(bot, { logger, settings }) {
         const response = await fetch(fileUrl);
         const buffer = await response.buffer();
 
+        // 根据贴纸类型构建参数
+        let stickerParams = { emojis: sticker.emoji || '😀' };
+
+        if (stickerType === 'animated') {
+          stickerParams.tgs_sticker = { source: buffer };
+        } else if (stickerType === 'video') {
+          stickerParams.webm_sticker = { source: buffer };
+        } else {
+          stickerParams.png_sticker = { source: buffer };
+        }
+
         // 创建贴纸包
         await ctx.telegram.createNewStickerSet(
           userIdNum,
           packName,
           pendingPack.title,
-          {
-            png_sticker: { source: buffer },
-            emojis: sticker.emoji || '😀',
-          }
+          stickerParams
         );
 
-        // 保存贴纸包信息
+        // 保存贴纸包信息（包含贴纸类型）
         storage.addUserStickerPack({
           userId,
           name: packName,
           title: pendingPack.title,
+          stickerType: stickerType,
           stickerCount: 1,
         });
 
-        logger.info(`创建贴纸包: ${packName} (用户: ${userId})`);
+        logger.info(`创建${getTypeLabel(stickerType)}贴纸包: ${packName} (用户: ${userId})`);
 
         return ctx.reply(
-          `🎉 <b>贴纸包创建成功！</b>\n\n` +
+          `🎉 <b>${getTypeLabel(stickerType)}贴纸包创建成功！</b>\n\n` +
           `📦 名称: ${pendingPack.title}\n` +
           `🎨 已添加 1 个贴纸\n\n` +
-          `现在转发贴纸给我，可以直接添加到这个贴纸包！`,
+          `⚠️ 注意: 此贴纸包只能添加<b>${getTypeLabel(stickerType)}</b>贴纸\n\n` +
+          `继续转发贴纸给我添加更多！`,
           {
             parse_mode: 'HTML',
             reply_markup: {
@@ -165,6 +206,7 @@ function setup(bot, { logger, settings }) {
 
     // 获取用户的贴纸包
     const packs = storage.getUserStickerPacks(userId);
+    const currentStickerType = getStickerType(sticker);
 
     // 检查贴纸是否已收藏
     const existingStickers = storage.getStickers(userId);
@@ -176,6 +218,7 @@ function setup(bot, { logger, settings }) {
       emoji: sticker.emoji,
       isAnimated: sticker.is_animated,
       isVideo: sticker.is_video,
+      stickerType: currentStickerType,
       timestamp: Date.now(),
     });
 
@@ -192,14 +235,18 @@ function setup(bot, { logger, settings }) {
 
     // 如果有贴纸包，显示添加到贴纸包的选项
     if (packs.length > 0) {
-      // 筛选未满的贴纸包
-      const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
+      // 筛选未满且类型匹配的贴纸包
+      const availablePacks = packs.filter(p =>
+        (p.stickerCount || 0) < MAX_STICKERS_PER_PACK &&
+        (!p.stickerType || p.stickerType === currentStickerType)
+      );
 
       if (availablePacks.length > 0) {
         // 显示贴纸包选项（最多显示3个），使用索引作为短ID
         availablePacks.slice(0, 3).forEach((pack, idx) => {
+          const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
           buttons.push([{
-            text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
+            text: `${typeIcon} ${pack.title} (${pack.stickerCount || 0})`,
             callback_data: `qa_${idx}`,  // 短callback_data
           }]);
         });
@@ -217,7 +264,7 @@ function setup(bot, { logger, settings }) {
     buttons.push([{ text: '➕ 创建新贴纸包', callback_data: 'newpack_start' }]);
 
     // 发送提示
-    const typeLabel = sticker.is_animated ? '动态' : sticker.is_video ? '视频' : '静态';
+    const typeLabel = getTypeLabel(currentStickerType);
     const statusText = alreadySaved ? '（已在收藏中）' : '';
 
     ctx.reply(
@@ -245,9 +292,12 @@ function setup(bot, { logger, settings }) {
       return ctx.editMessageText('❌ 贴纸已过期，请重新发送');
     }
 
-    // 获取贴纸包
+    // 获取类型匹配的贴纸包
     const packs = storage.getUserStickerPacks(userId);
-    const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
+    const availablePacks = packs.filter(p =>
+      (p.stickerCount || 0) < MAX_STICKERS_PER_PACK &&
+      (!p.stickerType || p.stickerType === pendingSticker.stickerType)
+    );
     const pack = availablePacks[packIndex];
 
     if (!pack) {
@@ -265,9 +315,10 @@ function setup(bot, { logger, settings }) {
 
     if (success) {
       const updatedPack = storage.getUserStickerPack(userId, pack.name);
+      const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
       await ctx.editMessageText(
         `✅ <b>已添加到贴纸包</b>\n\n` +
-        `📦 ${updatedPack?.title || pack.title}\n` +
+        `${typeIcon} ${updatedPack?.title || pack.title}\n` +
         `🎨 当前共 ${updatedPack?.stickerCount || 1} 个贴纸\n\n` +
         `继续转发贴纸给我添加更多！`,
         {
@@ -280,7 +331,7 @@ function setup(bot, { logger, settings }) {
         }
       );
     } else {
-      await ctx.editMessageText('❌ 添加失败，可能是动态贴纸或贴纸包已满');
+      await ctx.editMessageText('❌ 添加失败，贴纸类型不匹配或贴纸包已满');
     }
   });
 
@@ -289,18 +340,31 @@ function setup(bot, { logger, settings }) {
     try { await ctx.answerCbQuery(); } catch (e) {}
 
     const userId = ctx.from.id.toString();
+
+    // 从临时存储获取贴纸类型
+    const pendingSticker = pendingStickers.get(userId);
+    if (!pendingSticker) {
+      return ctx.editMessageText('❌ 贴纸已过期，请重新发送');
+    }
+
     const packs = storage.getUserStickerPacks(userId);
-    const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
+    const availablePacks = packs.filter(p =>
+      (p.stickerCount || 0) < MAX_STICKERS_PER_PACK &&
+      (!p.stickerType || p.stickerType === pendingSticker.stickerType)
+    );
 
     if (availablePacks.length === 0) {
-      return ctx.editMessageText('❌ 没有可用的贴纸包');
+      return ctx.editMessageText('❌ 没有类型匹配的贴纸包');
     }
 
     // 显示所有贴纸包（每行一个，最多10个）
-    const buttons = availablePacks.slice(0, 10).map((pack, idx) => [{
-      text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
-      callback_data: `qa_${idx}`,
-    }]);
+    const buttons = availablePacks.slice(0, 10).map((pack, idx) => {
+      const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
+      return [{
+        text: `${typeIcon} ${pack.title} (${pack.stickerCount || 0})`,
+        callback_data: `qa_${idx}`,
+      }];
+    });
 
     buttons.push([{ text: '🔙 取消', callback_data: 'stickers_cancel' }]);
 
@@ -407,7 +471,8 @@ function setup(bot, { logger, settings }) {
 
     ctx.reply(
       `📦 准备创建贴纸包: <b>${packTitle}</b>\n\n` +
-      `请现在转发一个<b>静态贴纸</b>给我，作为贴纸包的第一个贴纸`,
+      `请现在转发一个贴纸给我，作为贴纸包的第一个贴纸\n\n` +
+      `💡 支持静态、动态、视频贴纸（贴纸包类型由第一个贴纸决定）`,
       { parse_mode: 'HTML' }
     );
   });
@@ -450,16 +515,20 @@ function setup(bot, { logger, settings }) {
       );
     }
 
-    const buttons = packs.map(pack => [{
-      text: `📦 ${pack.title} (${pack.stickerCount || 0}/${MAX_STICKERS_PER_PACK})`,
-      url: `https://t.me/addstickers/${pack.name}`,
-    }]);
+    const buttons = packs.map(pack => {
+      const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
+      return [{
+        text: `${typeIcon} ${pack.title} (${pack.stickerCount || 0}/${MAX_STICKERS_PER_PACK})`,
+        url: `https://t.me/addstickers/${pack.name}`,
+      }];
+    });
 
     buttons.push([{ text: '➕ 创建新贴纸包', callback_data: 'newpack_start' }]);
 
     ctx.reply(
       `📦 <b>我的贴纸包</b>\n\n` +
       `共 ${packs.length} 个贴纸包\n` +
+      `🖼️ 静态  ✨ 动态  🎬 视频\n\n` +
       `点击查看并添加到你的 Telegram：`,
       {
         parse_mode: 'HTML',
@@ -483,13 +552,16 @@ function setup(bot, { logger, settings }) {
       );
     }
 
-    const buttons = packs.map(pack => [{
-      text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
-      url: `https://t.me/addstickers/${pack.name}`,
-    }]);
+    const buttons = packs.map(pack => {
+      const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
+      return [{
+        text: `${typeIcon} ${pack.title} (${pack.stickerCount || 0})`,
+        url: `https://t.me/addstickers/${pack.name}`,
+      }];
+    });
 
     await ctx.editMessageText(
-      `📦 <b>我的贴纸包</b>\n\n共 ${packs.length} 个`,
+      `📦 <b>我的贴纸包</b>\n\n共 ${packs.length} 个\n🖼️ 静态  ✨ 动态  🎬 视频`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: buttons }
