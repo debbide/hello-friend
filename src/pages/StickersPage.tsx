@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { stickersApi, Sticker, StickerGroup, stickerPacksApi, StickerPack, BACKEND_URL } from "@/lib/api/backend";
-import { Sticker as StickerIcon, FolderOpen, Trash2, Tag, RefreshCw, Search, Grid3X3, List, Download, Upload, Loader2, ExternalLink, Package } from "lucide-react";
+import { Sticker as StickerIcon, FolderOpen, Trash2, Tag, RefreshCw, Search, Grid3X3, List, Download, Upload, Loader2, ExternalLink, Package, ImageDown } from "lucide-react";
 import { toast } from "sonner";
 
 const StickersSkeleton = () => (
@@ -91,6 +91,7 @@ const StickersPage = () => {
     fileUrl?: string;
   }>>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isExportingPack, setIsExportingPack] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -200,6 +201,38 @@ const StickersPage = () => {
       toast.error(result.error || "加载失败");
     }
     setIsLoadingPreview(false);
+  };
+
+  const handleExportPack = async (pack: StickerPack) => {
+    setIsExportingPack(true);
+    try {
+      const token = localStorage.getItem("bot_admin_token");
+      const url = stickerPacksApi.exportPackUrl(pack.name);
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `${pack.name}_stickers_${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      toast.success("贴纸包已导出");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出失败");
+    } finally {
+      setIsExportingPack(false);
+    }
   };
 
   // 导出贴纸
@@ -515,6 +548,14 @@ const StickersPage = () => {
                         >
                           <StickerIcon className="w-4 h-4 mr-1" />
                           预览
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleExportPack(pack)}
+                          disabled={isExportingPack}
+                        >
+                          <ImageDown className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="outline"
@@ -878,23 +919,12 @@ const StickersPage = () => {
                     title={sticker.emoji}
                   >
                     {sticker.fileUrl ? (
-                      sticker.isVideo ? (
-                        <video
-                          src={sticker.fileUrl}
-                          className="w-full h-full object-contain"
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                        />
-                      ) : (
-                        <img
-                          src={sticker.fileUrl}
-                          alt={sticker.emoji}
-                          className="w-full h-full object-contain"
-                          loading="lazy"
-                        />
-                      )
+                      <img
+                        src={sticker.fileUrl}
+                        alt={sticker.emoji}
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                      />
                     ) : (
                       <span className="text-2xl">{sticker.emoji || '🎨'}</span>
                     )}
@@ -905,6 +935,16 @@ const StickersPage = () => {
           </div>
 
           <DialogFooter>
+            {previewPack && (
+              <Button
+                variant="outline"
+                onClick={() => handleExportPack(previewPack)}
+                disabled={isExportingPack}
+              >
+                <ImageDown className="w-4 h-4 mr-2" />
+                下载贴纸包
+              </Button>
+            )}
             {previewPack && (
               <Button variant="outline" asChild>
                 <a

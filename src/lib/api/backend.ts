@@ -954,6 +954,13 @@ export const stickerPacksApi = {
     return request(`/api/sticker-packs/${encodeURIComponent(packName)}/stickers`);
   },
 
+  exportPackUrl(packName: string): string {
+    const token = localStorage.getItem('bot_admin_token');
+    const url = `${BACKEND_URL}/api/sticker-packs/${encodeURIComponent(packName)}/export`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  },
+
+
   // 删除贴纸包（仅本地记录）
   async delete(packName: string): Promise<ApiResponse<{ success: boolean }>> {
     return request(`/api/sticker-packs/${encodeURIComponent(packName)}`, { method: 'DELETE' });

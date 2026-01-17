@@ -11,7 +11,8 @@ const { loadSettings, saveSettings, getDataPath } = require('./settings');
 const { loadCommands } = require('./commands/loader');
 const RssScheduler = require('./scheduler');
 const { parseRssFeed } = require('./rss-parser');
-const { closeBrowser } = require('./puppeteer.service');
+const { closeBrowser, getBrowser } = require('./puppeteer.service');
+
 const storage = require('./storage');
 const GitHubMonitor = require('./github-monitor');
 
@@ -1318,8 +1319,174 @@ app.get('/api/github/search', async (req, res) => {
 
 // ==================== Stickers API ====================
 
-// 获取用户创建的贴纸包列表
+const os = require('os');
+const zlib = require('zlib');
+const { promisify } = require('util');
+const { execFile } = require('child_process');
+const renderLottie = require('puppeteer-lottie');
+const execFileAsync = promisify(execFile);
+const stickerCacheDir = path.join(getDataPath(), 'cache', 'stickers');
+const puppeteerWSEndpoint = process.env.PUPPETEER_WS_ENDPOINT || null;
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+async function runFfmpeg(args) {
+  await execFileAsync('ffmpeg', args);
+}
+
+async function fetchStickerFile(fileId) {
+  const fetch = require('node-fetch');
+  const file = await currentBot.telegram.getFile(fileId);
+  const fileUrl = `https://api.telegram.org/file/bot${currentBot.telegram.token}/${file.file_path}`;
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error(`Telegram download failed: ${response.status}`);
+  }
+  return response.buffer();
+}
+
+async function convertTgsToGif(buffer, outputPath) {
+  const animationData = JSON.parse(zlib.gunzipSync(buffer).toString('utf-8'));
+  const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tgs-frames-'));
+  const fps = Number(animationData.fr) || 30;
+
+  try {
+    let browser = null;
+    if (puppeteerWSEndpoint) {
+      const puppeteer = require('puppeteer');
+      browser = await puppeteer.connect({ browserWSEndpoint: puppeteerWSEndpoint });
+    } else {
+      browser = await getBrowser();
+    }
+
+    const shouldCloseBrowser = puppeteerWSEndpoint ? true : false;
+
+    await renderLottie({
+      animationData,
+      output: path.join(framesDir, 'frame-%04d.png'),
+      width: 512,
+      height: 512,
+      quiet: true,
+      renderer: 'svg',
+      browser,
+      puppeteerOptions: {
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--single-process',
+          '--no-zygote',
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--disable-translate',
+          '--hide-scrollbars',
+          '--metrics-recording-only',
+          '--mute-audio',
+          '--no-first-run',
+        ],
+      },
+    });
+
+    if (shouldCloseBrowser && browser) {
+      await browser.disconnect();
+    }
+
+    await runFfmpeg([
+      '-y',
+      '-framerate',
+      String(fps),
+      '-i',
+      path.join(framesDir, 'frame-%04d.png'),
+      '-vf',
+      'scale=512:-1:flags=lanczos',
+      '-loop',
+      '0',
+      outputPath,
+    ]);
+  } finally {
+    fs.rmSync(framesDir, { recursive: true, force: true });
+  }
+}
+
+async function convertWebmToGif(inputPath, outputPath) {
+  await runFfmpeg([
+    '-y',
+    '-i',
+    inputPath,
+    '-vf',
+    'scale=512:-1:flags=lanczos',
+    '-loop',
+    '0',
+    outputPath,
+  ]);
+}
+
+function sanitizeFileName(name) {
+  return String(name || 'sticker')
+    .replace(/[\\/\?%\*:|"<>]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
+}
+
+async function convertWebpToPng(inputPath, outputPath) {
+  await runFfmpeg([
+    '-y',
+    '-i',
+    inputPath,
+    outputPath,
+  ]);
+}
+
+async function getConvertedStickerFile(fileId, type) {
+  ensureDir(stickerCacheDir);
+  const ext = type === 'static' ? 'png' : 'gif';
+  const cachePath = path.join(stickerCacheDir, `${fileId}.${ext}`);
+
+  if (fs.existsSync(cachePath)) {
+    return { cachePath, ext };
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sticker-'));
+  const sourceExt = type === 'animated' ? 'tgs' : type === 'video' ? 'webm' : 'webp';
+  const sourcePath = path.join(tempDir, `source.${sourceExt}`);
+  const outputPath = path.join(tempDir, `output.${ext}`);
+
+  try {
+    const buffer = await fetchStickerFile(fileId);
+    fs.writeFileSync(sourcePath, buffer);
+
+    if (type === 'animated') {
+      await convertTgsToGif(buffer, outputPath);
+    } else if (type === 'video') {
+      await convertWebmToGif(sourcePath, outputPath);
+    } else {
+      await convertWebpToPng(sourcePath, outputPath);
+    }
+
+    fs.copyFileSync(outputPath, cachePath);
+    return { cachePath, ext };
+  } catch (error) {
+    if (fs.existsSync(cachePath)) {
+      fs.unlinkSync(cachePath);
+    }
+    throw error;
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+// 获取所有贴纸包
 app.get('/api/sticker-packs', (req, res) => {
+
   const packs = storage.getUserStickerPacks();
   res.json({ success: true, data: packs });
 });
@@ -1347,17 +1514,12 @@ app.get('/api/sticker-packs/:name/stickers', async (req, res) => {
   const packName = req.params.name;
 
   try {
-    const fetch = require('node-fetch');
-
-    // 从 Telegram 获取贴纸包
     const stickerSet = await currentBot.telegram.getStickerSet(packName);
 
-    // 获取每个贴纸的文件 URL
     const stickersWithUrls = await Promise.all(
       stickerSet.stickers.map(async (sticker) => {
         try {
-          const file = await currentBot.telegram.getFile(sticker.file_id);
-          const fileUrl = `https://api.telegram.org/file/bot${currentBot.telegram.token}/${file.file_path}`;
+          const type = sticker.is_animated ? 'animated' : sticker.is_video ? 'video' : 'static';
           return {
             fileId: sticker.file_id,
             emoji: sticker.emoji,
@@ -1365,7 +1527,7 @@ app.get('/api/sticker-packs/:name/stickers', async (req, res) => {
             isVideo: sticker.is_video,
             width: sticker.width,
             height: sticker.height,
-            fileUrl: fileUrl,
+            fileUrl: `/api/stickers/preview/${sticker.file_id}?type=${type}`,
           };
         } catch (e) {
           return {
@@ -1395,6 +1557,93 @@ app.get('/api/sticker-packs/:name/stickers', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// 预览贴纸（转换为 GIF/PNG）
+app.get('/api/stickers/preview/:fileId', async (req, res) => {
+  if (!currentBot) {
+    return res.status(503).json({ success: false, error: 'Bot 未运行' });
+  }
+
+  const { fileId } = req.params;
+  const type = req.query.type;
+  const resolvedType = type === 'animated' || type === 'video' || type === 'static' ? type : null;
+
+  if (!resolvedType) {
+    return res.status(400).json({ success: false, error: 'Invalid sticker type' });
+  }
+
+  try {
+    const { cachePath, ext } = await getConvertedStickerFile(fileId, resolvedType);
+    res.setHeader('Content-Type', ext === 'gif' ? 'image/gif' : 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.sendFile(cachePath);
+  } catch (error) {
+    logger.error(`预览贴纸失败: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 导出贴纸包为 ZIP（GIF/PNG）
+app.get('/api/sticker-packs/:name/export', async (req, res) => {
+  if (!currentBot) {
+    return res.status(503).json({ success: false, error: 'Bot 未运行' });
+  }
+
+  const packName = req.params.name;
+
+  try {
+    const stickerSet = await currentBot.telegram.getStickerSet(packName);
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${packName}_${Date.now()}.zip"`);
+  res.setHeader('Cache-Control', 'no-store');
+
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < stickerSet.stickers.length; i++) {
+      const sticker = stickerSet.stickers[i];
+      const type = sticker.is_animated ? 'animated' : sticker.is_video ? 'video' : 'static';
+      try {
+        const { cachePath, ext } = await getConvertedStickerFile(sticker.file_id, type);
+        const safeName = sanitizeFileName(sticker.emoji || 'sticker');
+        const fileName = `${String(i + 1).padStart(3, '0')}_${safeName}.${ext}`;
+        archive.file(cachePath, { name: fileName });
+        successCount++;
+      } catch (e) {
+        failCount++;
+        logger.warn(`导出贴纸包失败: ${e.message}`);
+      }
+    }
+
+    const metadata = {
+      exportedAt: new Date().toISOString(),
+      packName: stickerSet.name,
+      title: stickerSet.title,
+      totalStickers: stickerSet.stickers.length,
+      successCount,
+      failCount,
+      stickers: stickerSet.stickers.map(s => ({
+        emoji: s.emoji,
+        isAnimated: s.is_animated,
+        isVideo: s.is_video,
+      })),
+    };
+    archive.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' });
+
+    await archive.finalize();
+  } catch (error) {
+    logger.error(`导出贴纸包失败: ${error.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
 
 // 获取所有贴纸
 app.get('/api/stickers', (req, res) => {

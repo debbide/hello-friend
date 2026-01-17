@@ -136,4 +136,5 @@ async function closeBrowser() {
 module.exports = {
   fetchWithPuppeteer,
   closeBrowser,
+  getBrowser,
 };
