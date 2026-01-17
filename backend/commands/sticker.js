@@ -9,6 +9,9 @@ const MAX_STICKERS_PER_PACK = 120;
 // 临时存储等待创建贴纸包的用户状态
 const pendingPackCreation = new Map();
 
+// 临时存储用户最近发送的贴纸（用于快速添加按钮）
+const pendingStickers = new Map();
+
 function generateStickersButtons(stickers, page = 0) {
   const totalPages = Math.ceil(stickers.length / PAGE_SIZE);
   const start = page * PAGE_SIZE;
@@ -167,6 +170,23 @@ function setup(bot, { logger, settings }) {
     const existingStickers = storage.getStickers(userId);
     const alreadySaved = existingStickers.some(s => s.fileId === sticker.file_id);
 
+    // 保存当前贴纸到临时存储（用于快速添加）
+    pendingStickers.set(userId, {
+      fileId: sticker.file_id,
+      emoji: sticker.emoji,
+      isAnimated: sticker.is_animated,
+      isVideo: sticker.is_video,
+      timestamp: Date.now(),
+    });
+
+    // 5分钟后自动清除
+    setTimeout(() => {
+      const pending = pendingStickers.get(userId);
+      if (pending && Date.now() - pending.timestamp > 5 * 60 * 1000) {
+        pendingStickers.delete(userId);
+      }
+    }, 5 * 60 * 1000);
+
     // 构建操作按钮
     const buttons = [];
 
@@ -176,24 +196,23 @@ function setup(bot, { logger, settings }) {
       const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
 
       if (availablePacks.length > 0) {
-        // 显示贴纸包选项（最多显示3个）
-        const packButtons = availablePacks.slice(0, 3).map(pack => ({
-          text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
-          callback_data: `quickadd_${pack.name}_${sticker.file_id.substring(0, 20)}`,
-        }));
-
-        // 每行显示一个贴纸包
-        packButtons.forEach(btn => buttons.push([btn]));
+        // 显示贴纸包选项（最多显示3个），使用索引作为短ID
+        availablePacks.slice(0, 3).forEach((pack, idx) => {
+          buttons.push([{
+            text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
+            callback_data: `qa_${idx}`,  // 短callback_data
+          }]);
+        });
 
         if (availablePacks.length > 3) {
-          buttons.push([{ text: '📦 更多贴纸包...', callback_data: `selectpack_${sticker.file_id.substring(0, 30)}` }]);
+          buttons.push([{ text: '📦 更多贴纸包...', callback_data: 'qa_more' }]);
         }
       }
     }
 
     // 添加其他操作按钮
     if (!alreadySaved) {
-      buttons.push([{ text: '💾 仅收藏', callback_data: `savonly_${sticker.file_id.substring(0, 40)}` }]);
+      buttons.push([{ text: '💾 仅收藏', callback_data: 'saveonly' }]);
     }
     buttons.push([{ text: '➕ 创建新贴纸包', callback_data: 'newpack_start' }]);
 
@@ -212,48 +231,50 @@ function setup(bot, { logger, settings }) {
     );
   });
 
-  // 快速添加到贴纸包
-  bot.action(/^quickadd_(.+)_(.+)$/, async (ctx) => {
+  // 快速添加到贴纸包（使用短索引）
+  bot.action(/^qa_(\d+)$/, async (ctx) => {
     try { await ctx.answerCbQuery('正在添加...'); } catch (e) {}
 
-    const packName = ctx.match[1];
-    const stickerFileIdPart = ctx.match[2];
+    const packIndex = parseInt(ctx.match[1]);
     const userId = ctx.from.id.toString();
     const userIdNum = ctx.from.id;
 
-    // 从最近的消息中获取完整的贴纸信息
-    const replyMsg = ctx.callbackQuery.message.reply_to_message;
-    let sticker;
-
-    if (replyMsg && replyMsg.sticker) {
-      sticker = replyMsg.sticker;
-    } else {
-      // 尝试从收藏中查找
-      const stickers = storage.getStickers(userId);
-      const found = stickers.find(s => s.fileId.startsWith(stickerFileIdPart));
-      if (found) {
-        sticker = { file_id: found.fileId, emoji: found.emoji, is_animated: found.isAnimated, is_video: found.isVideo };
-      }
+    // 从临时存储获取贴纸
+    const pendingSticker = pendingStickers.get(userId);
+    if (!pendingSticker) {
+      return ctx.editMessageText('❌ 贴纸已过期，请重新发送');
     }
 
-    if (!sticker) {
-      return ctx.editMessageText('❌ 找不到贴纸，请重新发送');
+    // 获取贴纸包
+    const packs = storage.getUserStickerPacks(userId);
+    const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
+    const pack = availablePacks[packIndex];
+
+    if (!pack) {
+      return ctx.editMessageText('❌ 贴纸包不存在');
     }
 
-    const success = await addStickerToPack(ctx, userIdNum, packName, sticker, true);
+    const sticker = {
+      file_id: pendingSticker.fileId,
+      emoji: pendingSticker.emoji,
+      is_animated: pendingSticker.isAnimated,
+      is_video: pendingSticker.isVideo,
+    };
+
+    const success = await addStickerToPack(ctx, userIdNum, pack.name, sticker, true);
 
     if (success) {
-      const pack = storage.getUserStickerPack(userId, packName);
+      const updatedPack = storage.getUserStickerPack(userId, pack.name);
       await ctx.editMessageText(
         `✅ <b>已添加到贴纸包</b>\n\n` +
-        `📦 ${pack?.title || packName}\n` +
-        `🎨 当前共 ${pack?.stickerCount || 1} 个贴纸\n\n` +
+        `📦 ${updatedPack?.title || pack.title}\n` +
+        `🎨 当前共 ${updatedPack?.stickerCount || 1} 个贴纸\n\n` +
         `继续转发贴纸给我添加更多！`,
         {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '📦 查看贴纸包', url: `https://t.me/addstickers/${packName}` }],
+              [{ text: '📦 查看贴纸包', url: `https://t.me/addstickers/${pack.name}` }],
             ]
           }
         }
@@ -263,48 +284,71 @@ function setup(bot, { logger, settings }) {
     }
   });
 
-  // 仅收藏贴纸
-  bot.action(/^savonly_(.+)$/, async (ctx) => {
+  // 更多贴纸包选择
+  bot.action('qa_more', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) {}
 
-    const fileIdPart = ctx.match[1];
     const userId = ctx.from.id.toString();
+    const packs = storage.getUserStickerPacks(userId);
+    const availablePacks = packs.filter(p => (p.stickerCount || 0) < MAX_STICKERS_PER_PACK);
 
-    // 从回复消息获取贴纸
-    const replyMsg = ctx.callbackQuery.message.reply_to_message;
-    if (!replyMsg || !replyMsg.sticker) {
-      return ctx.editMessageText('❌ 找不到贴纸');
+    if (availablePacks.length === 0) {
+      return ctx.editMessageText('❌ 没有可用的贴纸包');
     }
 
-    const sticker = replyMsg.sticker;
+    // 显示所有贴纸包（每行一个，最多10个）
+    const buttons = availablePacks.slice(0, 10).map((pack, idx) => [{
+      text: `📦 ${pack.title} (${pack.stickerCount || 0})`,
+      callback_data: `qa_${idx}`,
+    }]);
+
+    buttons.push([{ text: '🔙 取消', callback_data: 'stickers_cancel' }]);
+
+    await ctx.editMessageText(
+      '📦 选择要添加到的贴纸包：',
+      { reply_markup: { inline_keyboard: buttons } }
+    );
+  });
+
+  // 取消操作
+  bot.action('stickers_cancel', async (ctx) => {
+    try { await ctx.answerCbQuery('已取消'); } catch (e) {}
+    await ctx.editMessageText('❌ 已取消操作');
+  });
+
+  // 仅收藏贴纸（使用临时存储）
+  bot.action('saveonly', async (ctx) => {
+    try { await ctx.answerCbQuery(); } catch (e) {}
+
+    const userId = ctx.from.id.toString();
+
+    // 从临时存储获取贴纸
+    const pendingSticker = pendingStickers.get(userId);
+    if (!pendingSticker) {
+      return ctx.editMessageText('❌ 贴纸已过期，请重新发送');
+    }
 
     // 检查是否已收藏
     const stickers = storage.getStickers(userId);
-    if (stickers.some(s => s.fileId === sticker.file_id)) {
+    if (stickers.some(s => s.fileId === pendingSticker.fileId)) {
       return ctx.editMessageText('⚠️ 这个贴纸已经在收藏中了');
     }
 
     // 保存贴纸
     storage.addSticker({
-      fileId: sticker.file_id,
-      fileUniqueId: sticker.file_unique_id,
-      setName: sticker.set_name || null,
-      emoji: sticker.emoji || null,
-      isAnimated: sticker.is_animated || false,
-      isVideo: sticker.is_video || false,
-      type: sticker.type || 'regular',
-      width: sticker.width,
-      height: sticker.height,
+      fileId: pendingSticker.fileId,
+      emoji: pendingSticker.emoji || null,
+      isAnimated: pendingSticker.isAnimated || false,
+      isVideo: pendingSticker.isVideo || false,
       userId,
     });
 
-    logger.info(`贴纸已收藏: ${sticker.file_id.substring(0, 20)}... (用户: ${userId})`);
+    logger.info(`贴纸已收藏: ${pendingSticker.fileId.substring(0, 20)}... (用户: ${userId})`);
 
     await ctx.editMessageText(
       `✅ <b>贴纸已收藏</b>\n\n` +
-      `${sticker.emoji ? `表情: ${sticker.emoji}` : ''}\n` +
-      `${sticker.set_name ? `来源: ${sticker.set_name}` : '单独贴纸'}\n\n` +
-      `💡 提示: 收藏的贴纸需要通过 /createpack 创建贴纸包后才能在官方面板使用`,
+      `${pendingSticker.emoji ? `表情: ${pendingSticker.emoji}` : ''}\n\n` +
+      `💡 提示: 使用 /newpack 创建贴纸包后可在官方面板使用`,
       {
         parse_mode: 'HTML',
         reply_markup: {
