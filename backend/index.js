@@ -1318,6 +1318,26 @@ app.get('/api/github/search', async (req, res) => {
 
 // ==================== Stickers API ====================
 
+// 获取用户创建的贴纸包列表
+app.get('/api/sticker-packs', (req, res) => {
+  const packs = storage.getUserStickerPacks();
+  res.json({ success: true, data: packs });
+});
+
+// 删除贴纸包（仅从本地记录删除，Telegram上的贴纸包需要手动删除）
+app.delete('/api/sticker-packs/:name', (req, res) => {
+  const packName = req.params.name;
+  const packs = storage.getUserStickerPacks();
+  const pack = packs.find(p => p.name === packName);
+
+  if (!pack) {
+    return res.status(404).json({ success: false, error: '贴纸包不存在' });
+  }
+
+  storage.deleteUserStickerPack(null, packName);
+  res.json({ success: true });
+});
+
 // 获取所有贴纸
 app.get('/api/stickers', (req, res) => {
   const stickers = storage.getStickers();

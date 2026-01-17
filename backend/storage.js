@@ -515,7 +515,10 @@ function updateUserStickerPack(userId, packName, updates) {
 
 function deleteUserStickerPack(userId, packName) {
     const packs = loadData('user-sticker-packs.json', []);
-    const filtered = packs.filter(p => !(p.userId === userId && p.name === packName));
+    // 如果没有提供 userId，则只按 packName 删除
+    const filtered = userId
+        ? packs.filter(p => !(p.userId === userId && p.name === packName))
+        : packs.filter(p => p.name !== packName);
     if (filtered.length === packs.length) return false;
     saveUserStickerPacks(filtered);
     return true;

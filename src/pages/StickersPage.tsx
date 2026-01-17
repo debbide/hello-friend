@@ -24,8 +24,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { stickersApi, Sticker, StickerGroup, BACKEND_URL } from "@/lib/api/backend";
-import { Sticker as StickerIcon, FolderOpen, Trash2, Tag, RefreshCw, Search, Grid3X3, List, Download, Upload, Loader2, ExternalLink } from "lucide-react";
+import { stickersApi, Sticker, StickerGroup, stickerPacksApi, StickerPack, BACKEND_URL } from "@/lib/api/backend";
+import { Sticker as StickerIcon, FolderOpen, Trash2, Tag, RefreshCw, Search, Grid3X3, List, Download, Upload, Loader2, ExternalLink, Package } from "lucide-react";
 import { toast } from "sonner";
 
 const StickersSkeleton = () => (
@@ -49,10 +49,12 @@ const StickersSkeleton = () => (
 const StickersPage = () => {
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [groups, setGroups] = useState<StickerGroup[]>([]);
+  const [stickerPacks, setStickerPacks] = useState<StickerPack[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [activeTab, setActiveTab] = useState<"stickers" | "packs">("stickers");
 
   // Dialog states
   const [selectedSticker, setSelectedSticker] = useState<Sticker | null>(null);
@@ -84,15 +86,19 @@ const StickersPage = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [stickersResult, groupsResult] = await Promise.all([
+    const [stickersResult, groupsResult, packsResult] = await Promise.all([
       stickersApi.list(),
       stickersApi.getGroups(),
+      stickerPacksApi.list(),
     ]);
     if (stickersResult.success && stickersResult.data) {
       setStickers(stickersResult.data);
     }
     if (groupsResult.success && groupsResult.data) {
       setGroups(groupsResult.data);
+    }
+    if (packsResult.success && packsResult.data) {
+      setStickerPacks(packsResult.data);
     }
     setIsLoading(false);
   };
@@ -304,40 +310,59 @@ const StickersPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <StickerIcon className="w-6 h-6 text-primary" />
-            贴纸收藏
+            贴纸管理
           </h1>
-          <p className="text-muted-foreground mt-1">管理通过 Bot 收藏的贴纸</p>
+          <p className="text-muted-foreground mt-1">管理贴纸收藏和自定义贴纸包</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsImportOpen(true)}
-          >
-            <Upload className="w-4 h-4 mr-1" />
-            导入
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={isExporting || stickers.length === 0}
-          >
-            {isExporting ? (
-              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4 mr-1" />
-            )}
-            导出
-          </Button>
           <Button variant="outline" size="icon" onClick={loadData}>
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <Badge variant="outline" className="px-3 py-1">
-            {stickers.length} 个贴纸
-          </Badge>
         </div>
       </div>
+
+      {/* Main Tabs: Stickers vs Packs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "stickers" | "packs")} className="w-full">
+        <TabsList>
+          <TabsTrigger value="stickers" className="flex items-center gap-2">
+            <StickerIcon className="w-4 h-4" />
+            贴纸收藏 ({stickers.length})
+          </TabsTrigger>
+          <TabsTrigger value="packs" className="flex items-center gap-2">
+            <Package className="w-4 h-4" />
+            我的贴纸包 ({stickerPacks.length})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Stickers Tab Content */}
+        <TabsContent value="stickers" className="mt-4 space-y-4">
+          {/* Import/Export Buttons */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsImportOpen(true)}
+            >
+              <Upload className="w-4 h-4 mr-1" />
+              导入
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={isExporting || stickers.length === 0}
+            >
+              {isExporting ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-1" />
+              )}
+              导出
+            </Button>
+            <Badge variant="outline" className="px-3 py-1">
+              {stickers.length} 个贴纸
+            </Badge>
+          </div>
 
       {/* Search and Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
@@ -419,6 +444,82 @@ const StickersPage = () => {
             {renderStickerGrid()}
           </TabsContent>
         ))}
+      </Tabs>
+      </TabsContent>
+
+        {/* Sticker Packs Tab Content */}
+        <TabsContent value="packs" className="mt-4">
+          {stickerPacks.length === 0 ? (
+            <Card className="p-8 text-center">
+              <Package className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">暂无贴纸包</h3>
+              <p className="text-muted-foreground mb-4">
+                在 Telegram Bot 中使用 /newpack 命令创建贴纸包
+              </p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {stickerPacks.map((pack) => {
+                const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
+                const typeLabel = pack.stickerType === 'animated' ? '动态' : pack.stickerType === 'video' ? '视频' : '静态';
+                return (
+                  <Card key={pack.id} className="overflow-hidden">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center justify-between text-base">
+                        <span className="flex items-center gap-2">
+                          <span>{typeIcon}</span>
+                          {pack.title}
+                        </span>
+                        <Badge variant="secondary">{typeLabel}</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>{pack.stickerCount} 个贴纸</span>
+                        <span>{new Date(pack.createdAt).toLocaleDateString("zh-CN")}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          asChild
+                        >
+                          <a
+                            href={`https://t.me/addstickers/${pack.name}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-1" />
+                            查看
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            if (confirm("确定删除此贴纸包记录？（Telegram上的贴纸包不会被删除）")) {
+                              const result = await stickerPacksApi.delete(pack.name);
+                              if (result.success) {
+                                setStickerPacks(stickerPacks.filter(p => p.id !== pack.id));
+                                toast.success("贴纸包记录已删除");
+                              } else {
+                                toast.error(result.error || "删除失败");
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Sticker Detail Dialog */}

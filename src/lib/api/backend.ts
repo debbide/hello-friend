@@ -915,6 +915,30 @@ export const stickersApi = {
   },
 };
 
+// ==================== Sticker Packs API ====================
+
+export interface StickerPack {
+  id: string;
+  userId: string;
+  name: string;
+  title: string;
+  stickerType?: 'static' | 'animated' | 'video';
+  stickerCount: number;
+  createdAt: string;
+}
+
+export const stickerPacksApi = {
+  // 获取贴纸包列表
+  async list(): Promise<ApiResponse<StickerPack[]>> {
+    return request('/api/sticker-packs');
+  },
+
+  // 删除贴纸包（仅本地记录）
+  async delete(packName: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/sticker-packs/${encodeURIComponent(packName)}`, { method: 'DELETE' });
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
