@@ -804,29 +804,46 @@ function setup(bot, { logger, settings }) {
     // 发送贴纸
     await ctx.replyWithSticker(sticker.fileId);
 
-    // 获取用户的贴纸包
+    // 保存当前查看的贴纸到临时存储（用于添加到贴纸包）
+    const stickerType = sticker.isAnimated ? 'animated' : sticker.isVideo ? 'video' : 'static';
+    pendingStickers.set(userId, {
+      fileId: sticker.fileId,
+      emoji: sticker.emoji,
+      isAnimated: sticker.isAnimated,
+      isVideo: sticker.isVideo,
+      stickerType: stickerType,
+      stickerId: sticker.id,
+      timestamp: Date.now(),
+    });
+
+    // 获取用户类型匹配的贴纸包
     const packs = storage.getUserStickerPacks(userId);
-    const packButtons = packs.slice(0, 3).map(pack => ({
-      text: `📦 添加到 ${pack.title}`,
-      callback_data: `addto_${pack.name}_${sticker.id}`,
-    }));
+    const availablePacks = packs.filter(p =>
+      (p.stickerCount || 0) < MAX_STICKERS_PER_PACK &&
+      (!p.stickerType || p.stickerType === stickerType)
+    );
 
     const createdAt = new Date(sticker.createdAt).toLocaleString('zh-CN');
     const tags = sticker.tags?.length > 0 ? sticker.tags.join(', ') : '无';
 
     const buttons = [];
 
-    // 添加到贴纸包按钮
-    if (packButtons.length > 0) {
-      packButtons.forEach(btn => buttons.push([btn]));
+    // 添加到贴纸包按钮（使用短索引）
+    if (availablePacks.length > 0) {
+      availablePacks.slice(0, 3).forEach((pack, idx) => {
+        const typeIcon = pack.stickerType === 'animated' ? '✨' : pack.stickerType === 'video' ? '🎬' : '🖼️';
+        buttons.push([{
+          text: `${typeIcon} 添加到 ${pack.title}`,
+          callback_data: `qa_${idx}`,  // 复用快速添加逻辑
+        }]);
+      });
     }
 
     buttons.push([
-      { text: '🏷️ 编辑标签', callback_data: `sticker_tag_${id}` },
-      { text: '📁 移动分组', callback_data: `sticker_move_${id}` },
+      { text: '🏷️ 编辑标签', callback_data: `sticker_tag_${id.substring(0, 20)}` },
+      { text: '🗑️ 删除', callback_data: `sticker_del_${id.substring(0, 20)}` },
     ]);
     buttons.push([
-      { text: '🗑️ 删除', callback_data: `sticker_del_confirm_${id}` },
       { text: '🔙 返回列表', callback_data: 'stickers_list' },
     ]);
 
@@ -844,73 +861,34 @@ function setup(bot, { logger, settings }) {
     );
   });
 
-  // 从详情页添加到贴纸包
-  bot.action(/^addto_(.+)_(.+)$/, async (ctx) => {
-    try { await ctx.answerCbQuery('正在添加...'); } catch (e) {}
-
-    const packName = ctx.match[1];
-    const stickerId = ctx.match[2];
-    const userId = ctx.from.id.toString();
-    const userIdNum = ctx.from.id;
-
-    const stickerData = storage.getStickers(userId).find(s => s.id === stickerId);
-    if (!stickerData) {
-      return ctx.reply('❌ 贴纸不存在');
-    }
-
-    const sticker = {
-      file_id: stickerData.fileId,
-      emoji: stickerData.emoji,
-      is_animated: stickerData.isAnimated,
-      is_video: stickerData.isVideo,
-    };
-
-    const success = await addStickerToPack(ctx, userIdNum, packName, sticker, true);
-
-    if (success) {
-      const pack = storage.getUserStickerPack(userId, packName);
-      await ctx.reply(
-        `✅ 已添加到贴纸包: ${pack?.title || packName}\n\n` +
-        `👉 <a href="https://t.me/addstickers/${packName}">查看贴纸包</a>`,
-        { parse_mode: 'HTML' }
-      );
-    } else {
-      await ctx.reply('❌ 添加失败');
-    }
-  });
-
-  // 删除确认
-  bot.action(/^sticker_del_confirm_(.+)$/, async (ctx) => {
-    try { await ctx.answerCbQuery(); } catch (e) {}
-    const id = ctx.match[1];
-
-    await ctx.editMessageText(
-      '⚠️ <b>确认删除</b>\n\n确定要删除这个贴纸吗？',
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '✅ 确认删除', callback_data: `sticker_del_${id}` },
-              { text: '❌ 取消', callback_data: 'stickers_list' },
-            ]
-          ]
-        }
-      }
-    );
-  });
-
-  // 执行删除
+  // 删除贴纸（使用临时存储的贴纸ID）
   bot.action(/^sticker_del_(.+)$/, async (ctx) => {
-    const id = ctx.match[1];
+    const idPart = ctx.match[1];
     const userId = ctx.from.id.toString();
-    const deleted = storage.deleteSticker(id, userId);
+
+    // 首先尝试从临时存储获取完整ID
+    const pendingSticker = pendingStickers.get(userId);
+    let stickerId = idPart;
+
+    if (pendingSticker && pendingSticker.stickerId && pendingSticker.stickerId.startsWith(idPart)) {
+      stickerId = pendingSticker.stickerId;
+    } else {
+      // 尝试从收藏中匹配
+      const stickers = storage.getStickers(userId);
+      const found = stickers.find(s => s.id.startsWith(idPart));
+      if (found) {
+        stickerId = found.id;
+      }
+    }
+
+    const deleted = storage.deleteSticker(stickerId, userId);
 
     if (!deleted) {
       return ctx.answerCbQuery('❌ 贴纸不存在');
     }
 
     await ctx.answerCbQuery('✅ 已删除');
+    pendingStickers.delete(userId);
 
     const stickers = storage.getStickers(userId);
 
@@ -933,12 +911,20 @@ function setup(bot, { logger, settings }) {
   // 添加标签提示
   bot.action(/^sticker_tag_(.+)$/, async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) {}
-    const id = ctx.match[1];
+    const idPart = ctx.match[1];
+    const userId = ctx.from.id.toString();
+
+    // 获取完整贴纸ID
+    const pendingSticker = pendingStickers.get(userId);
+    let stickerId = idPart;
+    if (pendingSticker && pendingSticker.stickerId && pendingSticker.stickerId.startsWith(idPart)) {
+      stickerId = pendingSticker.stickerId;
+    }
 
     await ctx.editMessageText(
       '🏷️ <b>添加标签</b>\n\n' +
       '发送标签（多个用空格分隔）:\n' +
-      `<code>/tag ${id} 标签1 标签2</code>`,
+      `<code>/tag ${stickerId} 标签1 标签2</code>`,
       { parse_mode: 'HTML' }
     );
   });
@@ -946,18 +932,27 @@ function setup(bot, { logger, settings }) {
   // /tag 命令 - 添加标签
   bot.command('tag', async (ctx) => {
     const parts = ctx.message.text.split(' ').slice(1);
-    const id = parts[0];
+    const idOrPrefix = parts[0];
     const tags = parts.slice(1);
 
-    if (!id || tags.length === 0) {
+    if (!idOrPrefix || tags.length === 0) {
       return ctx.reply('❌ 用法: /tag <贴纸ID> <标签1> <标签2> ...');
     }
 
     const userId = ctx.from.id.toString();
-    const updated = storage.updateSticker(id, userId, { tags });
+
+    // 尝试匹配完整ID或前缀
+    const stickers = storage.getStickers(userId);
+    const found = stickers.find(s => s.id === idOrPrefix || s.id.startsWith(idOrPrefix));
+
+    if (!found) {
+      return ctx.reply('❌ 贴纸不存在');
+    }
+
+    const updated = storage.updateSticker(found.id, userId, { tags });
 
     if (!updated) {
-      return ctx.reply('❌ 贴纸不存在');
+      return ctx.reply('❌ 更新失败');
     }
 
     ctx.reply(
