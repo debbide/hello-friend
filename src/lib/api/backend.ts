@@ -800,6 +800,121 @@ export const githubApi = {
   },
 };
 
+// ==================== Stickers API ====================
+
+export interface Sticker {
+  id: string;
+  fileId: string;
+  fileUniqueId: string;
+  setName: string | null;
+  emoji: string | null;
+  isAnimated: boolean;
+  isVideo: boolean;
+  type: string;
+  width: number;
+  height: number;
+  userId: string;
+  tags: string[];
+  groupId: string | null;
+  usageCount: number;
+  lastUsed?: string;
+  createdAt: string;
+}
+
+export interface StickerGroup {
+  id: string;
+  name: string;
+  userId: string;
+  order: number;
+  count?: number;
+  createdAt: string;
+}
+
+export const stickersApi = {
+  async list(): Promise<ApiResponse<Sticker[]>> {
+    return request<Sticker[]>('/api/stickers');
+  },
+
+  async get(id: string): Promise<ApiResponse<Sticker>> {
+    return request<Sticker>(`/api/stickers/${id}`);
+  },
+
+  async update(id: string, updates: { tags?: string[]; groupId?: string | null }): Promise<ApiResponse<Sticker>> {
+    return request(`/api/stickers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async delete(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/stickers/${id}`, { method: 'DELETE' });
+  },
+
+  async getGroups(): Promise<ApiResponse<StickerGroup[]>> {
+    return request<StickerGroup[]>('/api/stickers/groups');
+  },
+
+  async createGroup(name: string): Promise<ApiResponse<StickerGroup>> {
+    return request('/api/stickers/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async updateGroup(id: string, name: string): Promise<ApiResponse<StickerGroup>> {
+    return request(`/api/stickers/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async deleteGroup(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/stickers/groups/${id}`, { method: 'DELETE' });
+  },
+
+  // 导出贴纸为 ZIP
+  exportUrl(): string {
+    const token = localStorage.getItem('bot_admin_token');
+    return `${BACKEND_URL}/api/stickers/export?token=${token}`;
+  },
+
+  // 导入贴纸（创建贴纸包）
+  async import(files: File[], title: string, emojis: string = '😀'): Promise<ApiResponse<{
+    packName: string;
+    packTitle: string;
+    stickerCount: number;
+    totalUploaded: number;
+    errors?: string[];
+    link: string;
+  }>> {
+    const formData = new FormData();
+    files.forEach(file => formData.append('stickers', file));
+    formData.append('title', title);
+    formData.append('emojis', emojis);
+
+    const token = localStorage.getItem('bot_admin_token');
+    const url = `${BACKEND_URL}/api/stickers/import`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return { success: false, error: data.error || `HTTP ${response.status}` };
+      }
+
+      return data;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+    }
+  },
+};
+
 // ==================== WebSocket URL ====================
 
 export function getWebSocketUrl(): string {
@@ -825,4 +940,5 @@ export default {
   trending: trendingApi,
   priceMonitor: priceMonitorApi,
   github: githubApi,
+  stickers: stickersApi,
 };

@@ -1316,6 +1316,323 @@ app.get('/api/github/search', async (req, res) => {
   }
 });
 
+// ==================== Stickers API ====================
+
+// 获取所有贴纸
+app.get('/api/stickers', (req, res) => {
+  const stickers = storage.getStickers();
+  res.json({ success: true, data: stickers });
+});
+
+// 获取单个贴纸
+app.get('/api/stickers/:id', (req, res) => {
+  const stickers = storage.getStickers();
+  const sticker = stickers.find(s => s.id === req.params.id);
+  if (!sticker) {
+    return res.status(404).json({ success: false, error: '贴纸不存在' });
+  }
+  res.json({ success: true, data: sticker });
+});
+
+// 更新贴纸（标签、分组）
+app.put('/api/stickers/:id', (req, res) => {
+  const { tags, groupId } = req.body;
+  const stickers = storage.getStickers();
+  const sticker = stickers.find(s => s.id === req.params.id);
+
+  if (!sticker) {
+    return res.status(404).json({ success: false, error: '贴纸不存在' });
+  }
+
+  const updated = storage.updateSticker(req.params.id, sticker.userId, { tags, groupId });
+  res.json({ success: true, data: updated });
+});
+
+// 删除贴纸
+app.delete('/api/stickers/:id', (req, res) => {
+  const stickers = storage.getStickers();
+  const sticker = stickers.find(s => s.id === req.params.id);
+
+  if (!sticker) {
+    return res.status(404).json({ success: false, error: '贴纸不存在' });
+  }
+
+  const deleted = storage.deleteSticker(req.params.id, sticker.userId);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: '贴纸不存在' });
+  }
+  res.json({ success: true });
+});
+
+// 获取贴纸分组
+app.get('/api/stickers/groups', (req, res) => {
+  const groups = storage.getStickerGroups();
+  // 添加每个分组的贴纸数量
+  const stickers = storage.getStickers();
+  const groupsWithCount = groups.map(g => ({
+    ...g,
+    count: stickers.filter(s => s.groupId === g.id).length,
+  }));
+  res.json({ success: true, data: groupsWithCount });
+});
+
+// 创建贴纸分组
+app.post('/api/stickers/groups', (req, res) => {
+  const { name, userId } = req.body;
+  if (!name) {
+    return res.status(400).json({ success: false, error: '分组名称不能为空' });
+  }
+  const group = storage.addStickerGroup(name, userId || 'admin');
+  res.json({ success: true, data: group });
+});
+
+// 更新贴纸分组
+app.put('/api/stickers/groups/:id', (req, res) => {
+  const { name } = req.body;
+  const groups = storage.getStickerGroups();
+  const group = groups.find(g => g.id === req.params.id);
+
+  if (!group) {
+    return res.status(404).json({ success: false, error: '分组不存在' });
+  }
+
+  const updated = storage.updateStickerGroup(req.params.id, group.userId, { name });
+  res.json({ success: true, data: updated });
+});
+
+// 删除贴纸分组
+app.delete('/api/stickers/groups/:id', (req, res) => {
+  const groups = storage.getStickerGroups();
+  const group = groups.find(g => g.id === req.params.id);
+
+  if (!group) {
+    return res.status(404).json({ success: false, error: '分组不存在' });
+  }
+
+  const deleted = storage.deleteStickerGroup(req.params.id, group.userId);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: '分组不存在' });
+  }
+  res.json({ success: true });
+});
+
+// ==================== Stickers Import/Export API ====================
+
+const archiver = require('archiver');
+const multer = require('multer');
+
+// 配置 multer 用于文件上传
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 512 * 1024, // 512KB per file
+    files: 120, // 最多 120 个文件
+  },
+  fileFilter: (req, file, cb) => {
+    // 只接受 PNG 和 WebP
+    if (file.mimetype === 'image/png' || file.mimetype === 'image/webp') {
+      cb(null, true);
+    } else {
+      cb(new Error('只支持 PNG 和 WebP 格式'));
+    }
+  },
+});
+
+// 导出贴纸为 ZIP
+app.get('/api/stickers/export', async (req, res) => {
+  if (!currentBot) {
+    return res.status(503).json({ success: false, error: 'Bot 未运行' });
+  }
+
+  const stickers = storage.getStickers();
+  if (stickers.length === 0) {
+    return res.status(400).json({ success: false, error: '没有可导出的贴纸' });
+  }
+
+  try {
+    const fetch = require('node-fetch');
+
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="stickers_${Date.now()}.zip"`);
+
+    // 创建 ZIP 归档
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    // 下载并添加每个贴纸
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < stickers.length; i++) {
+      const sticker = stickers[i];
+      try {
+        const file = await currentBot.telegram.getFile(sticker.fileId);
+        const fileUrl = `https://api.telegram.org/file/bot${currentBot.telegram.token}/${file.file_path}`;
+
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          failCount++;
+          continue;
+        }
+
+        const buffer = await response.buffer();
+
+        // 确定文件扩展名
+        const ext = sticker.isAnimated ? 'tgs' : sticker.isVideo ? 'webm' : 'webp';
+        const fileName = `${String(i + 1).padStart(3, '0')}_${sticker.emoji || 'sticker'}.${ext}`;
+
+        archive.append(buffer, { name: fileName });
+        successCount++;
+
+        // 每下载 10 个贴纸暂停一下
+        if (i % 10 === 9) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      } catch (e) {
+        failCount++;
+        logger.warn(`导出贴纸失败: ${e.message}`);
+      }
+    }
+
+    // 添加元数据文件
+    const metadata = {
+      exportedAt: new Date().toISOString(),
+      totalStickers: stickers.length,
+      successCount,
+      failCount,
+      stickers: stickers.map(s => ({
+        emoji: s.emoji,
+        setName: s.setName,
+        tags: s.tags,
+        isAnimated: s.isAnimated,
+        isVideo: s.isVideo,
+      })),
+    };
+    archive.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' });
+
+    await archive.finalize();
+
+    storage.addLog('info', `导出贴纸: ${successCount}/${stickers.length}`, 'sticker');
+  } catch (error) {
+    logger.error(`导出贴纸失败: ${error.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// 导入贴纸（上传图片创建贴纸包）
+app.post('/api/stickers/import', upload.array('stickers', 120), async (req, res) => {
+  if (!currentBot) {
+    return res.status(503).json({ success: false, error: 'Bot 未运行' });
+  }
+
+  const settings = loadSettings();
+  if (!settings.adminId) {
+    return res.status(400).json({ success: false, error: '未配置管理员 ID' });
+  }
+
+  const files = req.files;
+  const packTitle = req.body.title || `导入贴纸包 ${new Date().toLocaleDateString('zh-CN')}`;
+  const emojis = req.body.emojis || '😀'; // 默认表情
+
+  if (!files || files.length === 0) {
+    return res.status(400).json({ success: false, error: '请上传贴纸图片文件' });
+  }
+
+  try {
+    const botInfo = await currentBot.telegram.getMe();
+    const botUsername = botInfo.username;
+    const userId = Number(settings.adminId);
+    const packName = `import_${Date.now()}_by_${botUsername}`;
+
+    // 创建贴纸包（使用第一个文件）
+    const firstFile = files[0];
+
+    await currentBot.telegram.createNewStickerSet(
+      userId,
+      packName,
+      packTitle,
+      {
+        png_sticker: { source: firstFile.buffer },
+        emojis: emojis,
+      }
+    );
+
+    logger.info(`创建导入贴纸包: ${packName}`);
+
+    // 添加剩余贴纸
+    let addedCount = 1;
+    const errors = [];
+
+    for (let i = 1; i < files.length; i++) {
+      try {
+        await currentBot.telegram.addStickerToSet(
+          userId,
+          packName,
+          {
+            png_sticker: { source: files[i].buffer },
+            emojis: emojis,
+          }
+        );
+        addedCount++;
+
+        // 每添加 5 个暂停一下
+        if (i % 5 === 0) {
+          await new Promise(r => setTimeout(r, 300));
+        }
+      } catch (e) {
+        errors.push(`文件 ${i + 1}: ${e.message}`);
+        logger.warn(`添加贴纸失败: ${e.message}`);
+      }
+    }
+
+    // 保存贴纸包记录
+    storage.addUserStickerPack({
+      userId: settings.adminId.toString(),
+      name: packName,
+      title: packTitle,
+      stickerCount: addedCount,
+      isImported: true,
+    });
+
+    storage.addLog('info', `导入贴纸包: ${packTitle} (${addedCount} 个)`, 'sticker');
+
+    res.json({
+      success: true,
+      data: {
+        packName,
+        packTitle,
+        stickerCount: addedCount,
+        totalUploaded: files.length,
+        errors: errors.length > 0 ? errors : undefined,
+        link: `https://t.me/addstickers/${packName}`,
+      },
+    });
+  } catch (error) {
+    logger.error(`导入贴纸失败: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 处理 multer 错误
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, error: '文件大小超过限制 (512KB)' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ success: false, error: '文件数量超过限制 (最多120个)' });
+    }
+    return res.status(400).json({ success: false, error: err.message });
+  }
+  if (err.message === '只支持 PNG 和 WebP 格式') {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+  next(err);
+});
+
 // ==================== Notes API ====================
 
 app.get('/api/notes', (req, res) => {

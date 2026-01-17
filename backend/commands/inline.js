@@ -1,22 +1,50 @@
 /**
  * 内联模式支持 - @bot query 在任意聊天中使用
  */
+const storage = require('../storage');
+
 function setup(bot, { logger }) {
   // 内联查询处理
   bot.on('inline_query', async (ctx) => {
     const query = ctx.inlineQuery.query.trim();
-    
+    const userId = ctx.from.id.toString();
+
     if (!query) {
-      // 空查询时显示使用提示
+      // 空查询时显示收藏的贴纸（最近使用的前20个）
+      const stickers = storage.getStickers(userId);
+
+      if (stickers.length > 0) {
+        // 按使用次数和最近使用时间排序
+        const sortedStickers = [...stickers].sort((a, b) => {
+          if (b.usageCount !== a.usageCount) {
+            return (b.usageCount || 0) - (a.usageCount || 0);
+          }
+          return new Date(b.lastUsed || b.createdAt) - new Date(a.lastUsed || a.createdAt);
+        }).slice(0, 20);
+
+        const results = sortedStickers.map((sticker, index) => ({
+          type: 'sticker',
+          id: `sticker_${sticker.id}_${index}`,
+          sticker_file_id: sticker.fileId,
+        }));
+
+        return ctx.answerInlineQuery(results, {
+          cache_time: 10,
+          is_personal: true,
+        });
+      }
+
+      // 没有收藏贴纸时显示使用提示
       return ctx.answerInlineQuery([
         {
           type: 'article',
           id: 'help',
           title: '💡 输入内容开始搜索',
-          description: '支持: 天气、汇率、翻译、二维码等',
+          description: '支持: 贴纸、天气、汇率、翻译、二维码等',
           input_message_content: {
             message_text: '📚 <b>内联模式帮助</b>\n\n' +
               '在任意聊天中输入 @机器人名 + 关键词：\n\n' +
+              '🎨 <code>直接输入</code> - 搜索收藏的贴纸\n' +
               '🌤️ <code>天气 北京</code> - 查询天气\n' +
               '💰 <code>汇率 100 USD CNY</code> - 汇率换算\n' +
               '📱 <code>二维码 内容</code> - 生成二维码\n' +
@@ -29,6 +57,33 @@ function setup(bot, { logger }) {
 
     const results = [];
     const lowerQuery = query.toLowerCase();
+
+    // 贴纸搜索（优先级最高）
+    const stickers = storage.getStickers(userId);
+    const matchedStickers = stickers.filter(sticker => {
+      // 搜索表情
+      if (sticker.emoji && sticker.emoji.includes(query)) return true;
+      // 搜索贴纸包名
+      if (sticker.setName && sticker.setName.toLowerCase().includes(lowerQuery)) return true;
+      // 搜索标签
+      if (sticker.tags && sticker.tags.some(tag => tag.toLowerCase().includes(lowerQuery))) return true;
+      return false;
+    }).slice(0, 20);
+
+    if (matchedStickers.length > 0) {
+      matchedStickers.forEach((sticker, index) => {
+        results.push({
+          type: 'sticker',
+          id: `sticker_${sticker.id}_${index}`,
+          sticker_file_id: sticker.fileId,
+        });
+      });
+
+      return ctx.answerInlineQuery(results, {
+        cache_time: 10,
+        is_personal: true,
+      });
+    }
 
     // 天气查询
     if (lowerQuery.startsWith('天气 ') || lowerQuery.startsWith('weather ')) {
@@ -113,7 +168,18 @@ function setup(bot, { logger }) {
       });
     }
 
-    await ctx.answerInlineQuery(results, { cache_time: 10 });
+    await ctx.answerInlineQuery(results, { cache_time: 10, is_personal: true });
+  });
+
+  // 记录贴纸使用
+  bot.on('chosen_inline_result', async (ctx) => {
+    const resultId = ctx.chosenInlineResult.result_id;
+    if (resultId.startsWith('sticker_')) {
+      const parts = resultId.split('_');
+      const stickerId = parts.slice(1, -1).join('_'); // 去掉最后的 index
+      const userId = ctx.from.id.toString();
+      storage.incrementStickerUsage(stickerId, userId);
+    }
   });
 
   logger.info('🔍 Inline 模式已加载');

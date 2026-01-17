@@ -17,6 +17,7 @@ import {
   Flame,
   TrendingDown,
   Github,
+  Sticker,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,7 @@ const navItems = [
   { to: "/github-monitor", icon: Github, label: "GitHub 监控", emoji: "🐙" },
   { to: "/tools", icon: Wrench, label: "实用工具", emoji: "🛠️" },
   { to: "/reminders", icon: Bell, label: "备忘提醒", emoji: "⏰" },
+  { to: "/stickers", icon: Sticker, label: "贴纸收藏", emoji: "🎨" },
   { to: "/scheduled-tasks", icon: Timer, label: "定时任务", emoji: "🕐" },
   { to: "/logs", icon: ScrollText, label: "实时日志", emoji: "📜" },
   { to: "/quick-send", icon: Send, label: "快捷发送", emoji: "📤" },

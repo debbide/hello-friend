@@ -18,6 +18,7 @@ import LogsPage from "./pages/LogsPage";
 import QuickSendPage from "./pages/QuickSendPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import SettingsPage from "./pages/SettingsPage";
+import StickersPage from "./pages/StickersPage";
 import ScheduledTasksPage from "./pages/ScheduledTasksPage";
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/github-monitor" element={<GitHubMonitorPage />} />
               <Route path="/tools" element={<ToolsPage />} />
               <Route path="/reminders" element={<RemindersPage />} />
+              <Route path="/stickers" element={<StickersPage />} />
               <Route path="/logs" element={<LogsPage />} />
               <Route path="/quick-send" element={<QuickSendPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />

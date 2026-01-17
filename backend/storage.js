@@ -362,6 +362,165 @@ function addGithubNotification(repoFullName, type, data) {
     return notification;
 }
 
+// ==================== 贴纸收藏存储 ====================
+
+function getStickers(userId = null) {
+    const stickers = loadData('stickers.json', []);
+    if (userId) {
+        return stickers.filter(s => s.userId === userId);
+    }
+    return stickers;
+}
+
+function saveStickers(stickers) {
+    saveData('stickers.json', stickers);
+}
+
+function addSticker(stickerData) {
+    const stickers = loadData('stickers.json', []);
+    const sticker = {
+        id: `stk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        ...stickerData,
+        tags: [],
+        groupId: null,
+        usageCount: 0,
+        createdAt: new Date().toISOString(),
+    };
+    stickers.unshift(sticker);
+    saveStickers(stickers);
+    return sticker;
+}
+
+function updateSticker(id, userId, updates) {
+    const stickers = loadData('stickers.json', []);
+    const index = stickers.findIndex(s => s.id === id && s.userId === userId);
+    if (index === -1) return null;
+    stickers[index] = { ...stickers[index], ...updates };
+    saveStickers(stickers);
+    return stickers[index];
+}
+
+function deleteSticker(id, userId) {
+    const stickers = loadData('stickers.json', []);
+    const filtered = stickers.filter(s => !(s.id === id && s.userId === userId));
+    if (filtered.length === stickers.length) return false;
+    saveStickers(filtered);
+    return true;
+}
+
+function incrementStickerUsage(id, userId) {
+    const stickers = loadData('stickers.json', []);
+    const sticker = stickers.find(s => s.id === id && s.userId === userId);
+    if (sticker) {
+        sticker.usageCount = (sticker.usageCount || 0) + 1;
+        sticker.lastUsed = new Date().toISOString();
+        saveStickers(stickers);
+    }
+}
+
+// ==================== 贴纸分组存储 ====================
+
+function getStickerGroups(userId = null) {
+    const groups = loadData('sticker-groups.json', []);
+    if (userId) {
+        return groups.filter(g => g.userId === userId);
+    }
+    return groups;
+}
+
+function saveStickerGroups(groups) {
+    saveData('sticker-groups.json', groups);
+}
+
+function addStickerGroup(name, userId) {
+    const groups = loadData('sticker-groups.json', []);
+    const group = {
+        id: `stk_grp_${Date.now()}`,
+        name,
+        userId,
+        order: groups.length,
+        createdAt: new Date().toISOString(),
+    };
+    groups.push(group);
+    saveStickerGroups(groups);
+    return group;
+}
+
+function updateStickerGroup(id, userId, updates) {
+    const groups = loadData('sticker-groups.json', []);
+    const index = groups.findIndex(g => g.id === id && g.userId === userId);
+    if (index === -1) return null;
+    groups[index] = { ...groups[index], ...updates };
+    saveStickerGroups(groups);
+    return groups[index];
+}
+
+function deleteStickerGroup(id, userId) {
+    const groups = loadData('sticker-groups.json', []);
+    const filtered = groups.filter(g => !(g.id === id && g.userId === userId));
+    if (filtered.length === groups.length) return false;
+    saveStickerGroups(filtered);
+
+    // 将该分组下的贴纸移出分组
+    const stickers = loadData('stickers.json', []);
+    stickers.forEach(s => {
+        if (s.groupId === id) {
+            s.groupId = null;
+        }
+    });
+    saveStickers(stickers);
+
+    return true;
+}
+
+// ==================== 用户贴纸包存储 ====================
+
+function getUserStickerPacks(userId = null) {
+    const packs = loadData('user-sticker-packs.json', []);
+    if (userId) {
+        return packs.filter(p => p.userId === userId);
+    }
+    return packs;
+}
+
+function saveUserStickerPacks(packs) {
+    saveData('user-sticker-packs.json', packs);
+}
+
+function addUserStickerPack(packData) {
+    const packs = loadData('user-sticker-packs.json', []);
+    const pack = {
+        id: `pack_${Date.now()}`,
+        ...packData,
+        createdAt: new Date().toISOString(),
+    };
+    packs.push(pack);
+    saveUserStickerPacks(packs);
+    return pack;
+}
+
+function getUserStickerPack(userId, packName) {
+    const packs = loadData('user-sticker-packs.json', []);
+    return packs.find(p => p.userId === userId && p.name === packName);
+}
+
+function updateUserStickerPack(userId, packName, updates) {
+    const packs = loadData('user-sticker-packs.json', []);
+    const index = packs.findIndex(p => p.userId === userId && p.name === packName);
+    if (index === -1) return null;
+    packs[index] = { ...packs[index], ...updates };
+    saveUserStickerPacks(packs);
+    return packs[index];
+}
+
+function deleteUserStickerPack(userId, packName) {
+    const packs = loadData('user-sticker-packs.json', []);
+    const filtered = packs.filter(p => !(p.userId === userId && p.name === packName));
+    if (filtered.length === packs.length) return false;
+    saveUserStickerPacks(filtered);
+    return true;
+}
+
 module.exports = {
     // 日志
     getLogs,
@@ -397,4 +556,21 @@ module.exports = {
     deleteGithubRepoByName,
     getGithubNotifications,
     addGithubNotification,
+    // 贴纸收藏
+    getStickers,
+    addSticker,
+    updateSticker,
+    deleteSticker,
+    incrementStickerUsage,
+    // 贴纸分组
+    getStickerGroups,
+    addStickerGroup,
+    updateStickerGroup,
+    deleteStickerGroup,
+    // 用户贴纸包
+    getUserStickerPacks,
+    addUserStickerPack,
+    getUserStickerPack,
+    updateUserStickerPack,
+    deleteUserStickerPack,
 };

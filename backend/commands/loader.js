@@ -31,6 +31,7 @@ function loadCommands(bot, ctx) {
   require('./translate').setup(bot, ctx);  // 翻译
   require('./note').setup(bot, ctx);       // 备忘录
   require('./github').setup(bot, ctx);     // GitHub 仓库监控
+  require('./sticker').setup(bot, ctx);    // 贴纸收藏
 
   logger.info('✅ 所有命令模块已加载');
 }
