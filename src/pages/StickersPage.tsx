@@ -205,6 +205,10 @@ const StickersPage = () => {
 
   const handleExportPack = async (pack: StickerPack) => {
     setIsExportingPack(true);
+    const loadingToast = toast.loading(
+      `正在导出 ${pack.title || pack.name}...`,
+      { description: "正在转换贴纸格式，请稍候" }
+    );
     try {
       const token = localStorage.getItem("bot_admin_token");
       const url = stickerPacksApi.exportPackUrl(pack.name);
@@ -227,9 +231,9 @@ const StickersPage = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(downloadUrl);
 
-      toast.success("贴纸包已导出");
+      toast.success("贴纸包已导出", { id: loadingToast });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "导出失败");
+      toast.error(error instanceof Error ? error.message : "导出失败", { id: loadingToast });
     } finally {
       setIsExportingPack(false);
     }
@@ -242,6 +246,10 @@ const StickersPage = () => {
       return;
     }
     setIsExporting(true);
+    const loadingToast = toast.loading(
+      `正在导出 ${stickers.length} 个贴纸...`,
+      { description: "正在打包贴纸文件，请稍候" }
+    );
     try {
       const token = localStorage.getItem("bot_admin_token");
       const url = `${BACKEND_URL}/api/stickers/export`;
@@ -265,9 +273,9 @@ const StickersPage = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(downloadUrl);
 
-      toast.success("贴纸导出成功");
+      toast.success("贴纸导出成功", { id: loadingToast });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "导出失败");
+      toast.error(error instanceof Error ? error.message : "导出失败", { id: loadingToast });
     } finally {
       setIsExporting(false);
     }
@@ -924,6 +932,18 @@ const StickersPage = () => {
                         alt={sticker.emoji}
                         className="w-full h-full object-contain"
                         loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.error-placeholder')) {
+                            const placeholder = document.createElement('span');
+                            placeholder.className = 'error-placeholder text-2xl opacity-50';
+                            placeholder.textContent = sticker.emoji || '❌';
+                            placeholder.title = '加载失败';
+                            parent.appendChild(placeholder);
+                          }
+                        }}
                       />
                     ) : (
                       <span className="text-2xl">{sticker.emoji || '🎨'}</span>

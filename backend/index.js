@@ -1338,9 +1338,110 @@ const execFileAsync = promisify(execFile);
 const stickerCacheDir = path.join(getDataPath(), 'cache', 'stickers');
 const puppeteerWSEndpoint = process.env.PUPPETEER_WS_ENDPOINT || null;
 
+// 缓存配置
+const STICKER_CACHE_MAX_AGE_DAYS = 7; // 缓存保留天数
+const STICKER_CACHE_MAX_SIZE_MB = 500; // 最大缓存大小 (MB)
+
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+// 清理过期的贴纸缓存
+function cleanStickerCache() {
+  if (!fs.existsSync(stickerCacheDir)) {
+    return { deleted: 0, freedBytes: 0 };
+  }
+
+  const now = Date.now();
+  const maxAge = STICKER_CACHE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  let deleted = 0;
+  let freedBytes = 0;
+
+  try {
+    const files = fs.readdirSync(stickerCacheDir);
+
+    // 获取所有文件的信息并按访问时间排序
+    const fileInfos = files.map(file => {
+      const filePath = path.join(stickerCacheDir, file);
+      try {
+        const stats = fs.statSync(filePath);
+        return { file, filePath, stats, atime: stats.atimeMs, size: stats.size };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
+    // 删除过期文件
+    for (const info of fileInfos) {
+      if (now - info.atime > maxAge) {
+        try {
+          fs.unlinkSync(info.filePath);
+          deleted++;
+          freedBytes += info.size;
+        } catch (e) {
+          logger.warn(`删除缓存文件失败: ${info.file}: ${e.message}`);
+        }
+      }
+    }
+
+    // 如果缓存仍然过大，删除最旧的文件
+    const remainingFiles = fileInfos.filter(info => fs.existsSync(info.filePath));
+    let totalSize = remainingFiles.reduce((sum, info) => sum + info.size, 0);
+    const maxSize = STICKER_CACHE_MAX_SIZE_MB * 1024 * 1024;
+
+    if (totalSize > maxSize) {
+      // 按访问时间排序，最旧的在前
+      remainingFiles.sort((a, b) => a.atime - b.atime);
+
+      for (const info of remainingFiles) {
+        if (totalSize <= maxSize) break;
+        try {
+          fs.unlinkSync(info.filePath);
+          deleted++;
+          freedBytes += info.size;
+          totalSize -= info.size;
+        } catch (e) {
+          logger.warn(`删除缓存文件失败: ${info.file}: ${e.message}`);
+        }
+      }
+    }
+
+    if (deleted > 0) {
+      logger.info(`🧹 清理贴纸缓存: 删除 ${deleted} 个文件, 释放 ${(freedBytes / 1024 / 1024).toFixed(2)} MB`);
+    }
+  } catch (e) {
+    logger.error(`清理缓存失败: ${e.message}`);
+  }
+
+  return { deleted, freedBytes };
+}
+
+// 获取缓存统计信息
+function getStickerCacheStats() {
+  if (!fs.existsSync(stickerCacheDir)) {
+    return { fileCount: 0, totalSize: 0, totalSizeMB: '0.00' };
+  }
+
+  try {
+    const files = fs.readdirSync(stickerCacheDir);
+    let totalSize = 0;
+
+    for (const file of files) {
+      try {
+        const stats = fs.statSync(path.join(stickerCacheDir, file));
+        totalSize += stats.size;
+      } catch {}
+    }
+
+    return {
+      fileCount: files.length,
+      totalSize,
+      totalSizeMB: (totalSize / 1024 / 1024).toFixed(2)
+    };
+  } catch {
+    return { fileCount: 0, totalSize: 0, totalSizeMB: '0.00' };
   }
 }
 
@@ -1670,6 +1771,33 @@ app.get('/api/sticker-packs/:name/export', async (req, res) => {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+});
+
+// 获取贴纸缓存统计
+app.get('/api/stickers/cache/stats', (req, res) => {
+  const stats = getStickerCacheStats();
+  res.json({
+    success: true,
+    data: {
+      ...stats,
+      maxAgeDays: STICKER_CACHE_MAX_AGE_DAYS,
+      maxSizeMB: STICKER_CACHE_MAX_SIZE_MB
+    }
+  });
+});
+
+// 手动清理贴纸缓存
+app.post('/api/stickers/cache/clean', (req, res) => {
+  const result = cleanStickerCache();
+  const stats = getStickerCacheStats();
+  res.json({
+    success: true,
+    data: {
+      deleted: result.deleted,
+      freedMB: (result.freedBytes / 1024 / 1024).toFixed(2),
+      currentStats: stats
+    }
+  });
 });
 
 
@@ -2440,6 +2568,14 @@ app.listen(PORT, '0.0.0.0', async () => {
 
   // 启动定时备份
   startBackupScheduler();
+
+  // 启动时清理一次贴纸缓存
+  cleanStickerCache();
+
+  // 每 6 小时清理一次贴纸缓存
+  setInterval(() => {
+    cleanStickerCache();
+  }, 6 * 60 * 60 * 1000);
 });
 
 // 优雅退出
