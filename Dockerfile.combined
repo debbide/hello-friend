@@ -40,7 +40,7 @@ RUN npm install --production --ignore-scripts
 # ===== Stage 3: 最终镜像 (目标架构) =====
 FROM node:20-alpine
 
-# 安装 Chromium for Puppeteer
+# 安装 Chromium for Puppeteer 和 ffmpeg for 贴纸转换
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -48,6 +48,7 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
+    ffmpeg \
     && rm -rf /var/cache/apk/*
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
