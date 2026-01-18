@@ -146,10 +146,20 @@ const publicPaths = [
   '/api/health',
 ];
 
+// 不需要认证的公开接口前缀（用于动态路径如 /api/stickers/preview/:fileId）
+const publicPathPrefixes = [
+  '/api/stickers/preview/',
+];
+
 // 认证中间件
 function authMiddleware(req, res, next) {
-  // 检查是否是公开接口
+  // 检查是否是公开接口（精确匹配）
   if (publicPaths.includes(req.path)) {
+    return next();
+  }
+
+  // 检查是否是公开接口（前缀匹配）
+  if (publicPathPrefixes.some(prefix => req.path.startsWith(prefix))) {
     return next();
   }
 
