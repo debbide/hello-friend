@@ -920,7 +920,7 @@ const StickersPage = () => {
                   >
                     {sticker.fileUrl ? (
                       <img
-                        src={sticker.fileUrl}
+                        src={`${BACKEND_URL}${sticker.fileUrl}`}
                         alt={sticker.emoji}
                         className="w-full h-full object-contain"
                         loading="lazy"
