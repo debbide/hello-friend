@@ -1594,16 +1594,11 @@ app.get('/api/sticker-packs/:name/export', async (req, res) => {
   try {
     const stickerSet = await currentBot.telegram.getStickerSet(packName);
 
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="${packName}_${Date.now()}.zip"`);
-  res.setHeader('Cache-Control', 'no-store');
-
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.pipe(res);
-
-    let successCount = 0;
+    // 先收集所有转换后的文件，避免在响应开始后无法返回错误
+    const convertedFiles = [];
     let failCount = 0;
+
+    logger.info(`开始导出贴纸包: ${packName}, 共 ${stickerSet.stickers.length} 个贴纸`);
 
     for (let i = 0; i < stickerSet.stickers.length; i++) {
       const sticker = stickerSet.stickers[i];
@@ -1612,12 +1607,34 @@ app.get('/api/sticker-packs/:name/export', async (req, res) => {
         const { cachePath, ext } = await getConvertedStickerFile(sticker.file_id, type);
         const safeName = sanitizeFileName(sticker.emoji || 'sticker');
         const fileName = `${String(i + 1).padStart(3, '0')}_${safeName}.${ext}`;
-        archive.file(cachePath, { name: fileName });
-        successCount++;
+        convertedFiles.push({ cachePath, fileName });
+        logger.debug(`转换成功 [${i + 1}/${stickerSet.stickers.length}]: ${fileName}`);
       } catch (e) {
         failCount++;
-        logger.warn(`导出贴纸包失败: ${e.message}`);
+        logger.warn(`导出贴纸包失败 [${i + 1}/${stickerSet.stickers.length}] (类型: ${type}): ${e.message}`);
       }
+    }
+
+    // 如果所有贴纸都转换失败，返回错误
+    if (convertedFiles.length === 0) {
+      logger.error(`贴纸包导出失败: ${packName}, 所有 ${stickerSet.stickers.length} 个贴纸转换失败`);
+      return res.status(500).json({
+        success: false,
+        error: `所有 ${stickerSet.stickers.length} 个贴纸转换失败，请检查后端日志`
+      });
+    }
+
+    // 现在可以安全地设置响应头并发送 ZIP
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${packName}_${Date.now()}.zip"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    // 添加所有转换成功的文件
+    for (const { cachePath, fileName } of convertedFiles) {
+      archive.file(cachePath, { name: fileName });
     }
 
     const metadata = {
@@ -1625,7 +1642,7 @@ app.get('/api/sticker-packs/:name/export', async (req, res) => {
       packName: stickerSet.name,
       title: stickerSet.title,
       totalStickers: stickerSet.stickers.length,
-      successCount,
+      successCount: convertedFiles.length,
       failCount,
       stickers: stickerSet.stickers.map(s => ({
         emoji: s.emoji,
@@ -1636,6 +1653,7 @@ app.get('/api/sticker-packs/:name/export', async (req, res) => {
     archive.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' });
 
     await archive.finalize();
+    logger.info(`贴纸包导出完成: ${packName}, 成功: ${convertedFiles.length}, 失败: ${failCount}`);
   } catch (error) {
     logger.error(`导出贴纸包失败: ${error.message}`);
     if (!res.headersSent) {

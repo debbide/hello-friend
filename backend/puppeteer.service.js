@@ -15,7 +15,7 @@ async function getBrowser() {
     return browser;
   }
 
-  const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
+  const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
   console.log(`🌐 启动 Puppeteer 浏览器 (${execPath})...`);
 
   try {
