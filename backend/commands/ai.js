@@ -142,7 +142,17 @@ function setup(bot, { logger }) {
                       { parse_mode: 'Markdown' }
                     );
                   } catch (e) {
-                    // 忽略消息未变化的错误
+                    // 如果 Markdown 解析失败（通常是流式过程中符号不完整），则降级为纯文本
+                    try {
+                      await ctx.telegram.editMessageText(
+                        ctx.chat.id,
+                        loading.message_id,
+                        null,
+                        `🤖 ${fullResponse}${TYPING_CHARS[cursorIndex]}`
+                      );
+                    } catch (e2) {
+                      // 忽略消息未变化的错误
+                    }
                   }
                 }
               }
@@ -157,21 +167,39 @@ function setup(bot, { logger }) {
       if (fullResponse) {
         history.push({ role: 'assistant', content: fullResponse });
 
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          loading.message_id,
-          null,
-          `🤖 ${fullResponse}`,
-          {
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [[
-                { text: '🔄 重新生成', callback_data: `ai_regen_${loading.message_id}` },
-                { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
-              ]]
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            loading.message_id,
+            null,
+            `🤖 ${fullResponse}`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🔄 重新生成', callback_data: `ai_regen_${loading.message_id}` },
+                  { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+                ]]
+              }
             }
-          }
-        );
+          );
+        } catch (e) {
+          // 最终回复如果 Markdown 解析还是失败，则以纯文本发送
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            loading.message_id,
+            null,
+            `🤖 ${fullResponse}`,
+            {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🔄 重新生成', callback_data: `ai_regen_${loading.message_id}` },
+                  { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+                ]]
+              }
+            }
+          );
+        }
       }
     } catch (error) {
       logger.error(`AI 请求失败: ${error.message}`);
@@ -380,7 +408,17 @@ function setup(bot, { logger }) {
                       `🤖 ${fullResponse}${TYPING_CHARS[cursorIndex]}`,
                       { parse_mode: 'Markdown' }
                     );
-                  } catch (e) { }
+                  } catch (e) {
+                    // 降级处理
+                    try {
+                      await ctx.telegram.editMessageText(
+                        ctx.chat.id,
+                        loading.message_id,
+                        null,
+                        `🤖 ${fullResponse}${TYPING_CHARS[cursorIndex]}`
+                      );
+                    } catch (e2) {}
+                  }
                 }
               }
             } catch (e) { }
@@ -392,21 +430,38 @@ function setup(bot, { logger }) {
       if (fullResponse) {
         history.push({ role: 'assistant', content: fullResponse });
 
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          loading.message_id,
-          null,
-          `🤖 ${fullResponse}`,
-          {
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [[
-                { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
-                { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
-              ]]
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            loading.message_id,
+            null,
+            `🤖 ${fullResponse}`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+                  { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
+                ]]
+              }
             }
-          }
-        );
+          );
+        } catch (e) {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            loading.message_id,
+            null,
+            `🤖 ${fullResponse}`,
+            {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+                  { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
+                ]]
+              }
+            }
+          );
+        }
       }
     } catch (error) {
       logger.error(`AI 请求失败: ${error.message}`);
