@@ -510,20 +510,18 @@ class GitHubMonitor {
 
     if (data.type === 'owner_repo_update') {
       const repoLines = (data.repos || []).slice(0, 6).map((repo, idx) => {
-        const updatedAt = repo.pushedAt
-          ? new Date(repo.pushedAt).toLocaleString('zh-CN', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            }).replace(/\//g, '-')
-          : '未知时间';
-        return `${idx + 1}. <a href="${repo.htmlUrl}">${repo.fullName}</a>\n   <i>${updatedAt}</i>`;
+        return `${idx + 1}. <a href="${repo.htmlUrl}">${repo.fullName}</a>`;
       });
 
       const extraLine = data.updatedCount > 6 ? `... 另外 ${data.updatedCount - 6} 个仓库更新` : '';
+      const nowText = new Date().toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).replace(/\//g, '-');
 
       return [
         `<b>GitHub 账号更新</b>`,
@@ -535,6 +533,7 @@ class GitHubMonitor {
         extraLine ? `\n${extraLine}` : '',
         ``,
         `<a href="${data.profileUrl}">GitHub 主页</a>`,
+        `时间：${nowText}`,
       ].filter(Boolean).join('\n');
     }
 
