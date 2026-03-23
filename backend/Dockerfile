@@ -13,12 +13,13 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --production
+RUN npm ci --omit=dev --include=optional
 
 COPY . .
 

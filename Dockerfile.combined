@@ -25,23 +25,7 @@ COPY public/ ./public/
 # 构建前端
 RUN npm run build
 
-# ===== Stage 2: 安装后端依赖 (在原生架构下执行) =====
-FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
-
-WORKDIR /app
-
-# 避免在构建阶段下载 Puppeteer 自带浏览器（最终镜像使用系统 chromium）
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-
-# 复制后端依赖文件
-COPY backend/package*.json ./
-
-# 安装后端依赖（不含 devDependencies）
-# 这一步在构建机器上执行，避免 QEMU 问题
-RUN npm install --production
-
-# ===== Stage 3: 最终镜像 (目标架构) =====
+# ===== Stage 2: 最终镜像 (目标架构) =====
 FROM node:20-alpine
 
 # 安装 Chromium for Puppeteer 和 ffmpeg for 贴纸转换
@@ -61,8 +45,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# 从 builder 复制 node_modules
-COPY --from=backend-builder /app/node_modules ./node_modules
+# 在目标架构安装后端依赖，确保 sharp 等原生模块匹配 CPU/ABI
+COPY backend/package*.json ./
+RUN npm ci --omit=dev --include=optional
 
 # 复制后端代码
 COPY backend/ ./
