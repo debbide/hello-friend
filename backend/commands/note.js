@@ -54,6 +54,10 @@ function generateNotesButtons(notes, page = 0) {
   }
 
   buttons.push([{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }]);
+  buttons.push([
+    { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+    { text: '🏠 主菜单', callback_data: 'menu_main' },
+  ]);
 
   return buttons;
 }
@@ -112,7 +116,10 @@ function setup(bot, { logger }) {
     if (notes.length === 0) {
       return ctx.reply('📭 暂无备忘', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
+            [{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }],
+          ]
         }
       });
     }
@@ -171,7 +178,10 @@ function setup(bot, { logger }) {
     if (notes.length === 0) {
       return ctx.editMessageText('📭 暂无备忘', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
+            [{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }],
+          ]
         }
       });
     }
@@ -257,7 +267,10 @@ function setup(bot, { logger }) {
     if (userNotes.length === 0) {
       await ctx.editMessageText('📭 暂无备忘', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
+            [{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }],
+          ]
         }
       });
     } else {
@@ -276,7 +289,12 @@ function setup(bot, { logger }) {
     try { await ctx.answerCbQuery(); } catch (e) {}
     await ctx.editMessageText(
       '➕ <b>添加备忘</b>\n\n发送命令添加：\n<code>/note 备忘内容</code>',
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }]],
+        },
+      }
     );
   });
 

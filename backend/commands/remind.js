@@ -102,6 +102,10 @@ function generateRemindersButtons(reminders, page = 0) {
   }
 
   buttons.push([{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }]);
+  buttons.push([
+    { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+    { text: '🏠 主菜单', callback_data: 'menu_main' },
+  ]);
 
   return buttons;
 }
@@ -130,6 +134,8 @@ function setup(bot, { logger }) {
           reply_markup: {
             inline_keyboard: [[
               { text: '📋 查看提醒列表', callback_data: 'reminders_list' }
+            ], [
+              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }
             ]]
           }
         }
@@ -257,7 +263,10 @@ function setup(bot, { logger }) {
     if (reminders.length === 0) {
       return ctx.editMessageText('📭 暂无提醒', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }],
+            [{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }],
+          ]
         }
       });
     }
@@ -343,7 +352,10 @@ function setup(bot, { logger }) {
     if (reminders.length === 0) {
       await ctx.editMessageText('📭 暂无提醒', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }],
+            [{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }],
+          ]
         }
       });
     } else {
@@ -366,7 +378,12 @@ function setup(bot, { logger }) {
       '<code>/remind 10m 内容</code> - 10分钟后\n' +
       '<code>/remind 2h 内容</code> - 2小时后\n' +
       '<code>/remind 14:00 内容</code> - 指定时间',
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' }]],
+        },
+      }
     );
   });
 

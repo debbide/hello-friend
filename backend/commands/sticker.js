@@ -41,6 +41,8 @@ function generateStickersButtons(stickers, page = 0) {
     buttons.push(navRow);
   }
 
+  buttons.push([{ text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' }]);
+
   return buttons;
 }
 
@@ -769,7 +771,12 @@ function setup(bot, { logger, settings }) {
     if (stickers.length === 0) {
       return ctx.editMessageText(
         '📭 <b>暂无收藏的贴纸</b>\n\n💡 将贴纸转发给我即可收藏',
-        { parse_mode: 'HTML' }
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{ text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' }]],
+          },
+        }
       );
     }
 

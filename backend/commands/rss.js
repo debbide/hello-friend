@@ -7,6 +7,16 @@ const PAGE_SIZE = 5;
 
 // 生成订阅列表内联按钮
 function generateListButtons(feeds, page = 0, chatId) {
+  if (feeds.length === 0) {
+    return [
+      [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
+      [
+        { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+        { text: '🏠 主菜单', callback_data: 'menu_main' },
+      ],
+    ];
+  }
+
   const totalPages = Math.ceil(feeds.length / PAGE_SIZE);
   const start = page * PAGE_SIZE;
   const pageFeeds = feeds.slice(start, start + PAGE_SIZE);
@@ -39,6 +49,11 @@ function generateListButtons(feeds, page = 0, chatId) {
   buttons.push([
     { text: '🔄 刷新全部', callback_data: 'rss_refresh_all' },
     { text: '➕ 添加订阅', callback_data: 'rss_add_prompt' },
+  ]);
+
+  buttons.push([
+    { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+    { text: '🏠 主菜单', callback_data: 'menu_main' },
   ]);
 
   return buttons;
@@ -81,7 +96,10 @@ function setup(bot, { scheduler, logger }) {
           { 
             parse_mode: 'HTML',
             reply_markup: {
-              inline_keyboard: [[{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }]]
+              inline_keyboard: [
+                [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
+                [{ text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' }],
+              ]
             }
           }
         );
@@ -445,7 +463,10 @@ function setup(bot, { scheduler, logger }) {
       if (feeds.length === 0) {
         await ctx.editMessageText('📭 暂无订阅', {
           reply_markup: {
-            inline_keyboard: [[{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }]]
+            inline_keyboard: [
+              [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
+              [{ text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' }],
+            ]
           }
         });
       } else {
@@ -467,7 +488,12 @@ function setup(bot, { scheduler, logger }) {
     try { await ctx.answerCbQuery(); } catch (e) {}
     await ctx.editMessageText(
       '➕ <b>添加 RSS 订阅</b>\n\n发送命令添加订阅：\n<code>/rss add https://example.com/feed.xml</code>',
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' }]],
+        },
+      }
     );
   });
 
