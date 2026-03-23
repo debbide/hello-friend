@@ -70,11 +70,15 @@ const StickersPage = () => {
   const [importFiles, setImportFiles] = useState<File[]>([]);
   const [importTitle, setImportTitle] = useState("");
   const [importEmoji, setImportEmoji] = useState("😀");
+  const [importMode, setImportMode] = useState<"new" | "existing">("new");
+  const [importPackName, setImportPackName] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [importResult, setImportResult] = useState<{
     success: boolean;
+    mode?: "new" | "existing";
     packName?: string;
+    packTitle?: string;
     link?: string;
     stickerCount?: number;
     errors?: string[];
@@ -287,23 +291,37 @@ const StickersPage = () => {
       toast.error("请选择图片文件");
       return;
     }
-    if (!importTitle.trim()) {
+    if (importMode === "new" && !importTitle.trim()) {
       toast.error("请输入贴纸包名称");
+      return;
+    }
+    if (importMode === "existing" && !importPackName) {
+      toast.error("请选择要导入的贴纸包");
       return;
     }
 
     setIsImporting(true);
     try {
-      const result = await stickersApi.import(importFiles, importTitle, importEmoji);
+      const result = await stickersApi.import(importFiles, importTitle, importEmoji, {
+        packMode: importMode,
+        packName: importMode === "existing" ? importPackName : undefined,
+      });
       if (result.success && result.data) {
         setImportResult({
           success: true,
+          mode: result.data.mode,
           packName: result.data.packName,
+          packTitle: result.data.packTitle,
           link: result.data.link,
           stickerCount: result.data.stickerCount,
           errors: result.data.errors,
         });
-        toast.success(`成功创建贴纸包，共 ${result.data.stickerCount} 个贴纸`);
+        if (result.data.mode === "existing") {
+          toast.success(`成功添加 ${result.data.stickerCount} 个贴纸到现有贴纸包`);
+        } else {
+          toast.success(`成功创建贴纸包，共 ${result.data.stickerCount} 个贴纸`);
+        }
+        loadData();
       } else {
         toast.error(result.error || "导入失败");
         setImportResult({ success: false });
@@ -321,6 +339,8 @@ const StickersPage = () => {
     setImportFiles([]);
     setImportTitle("");
     setImportEmoji("😀");
+    setImportMode("new");
+    setImportPackName("");
     setImportResult(null);
     setIsImportOpen(false);
   };
@@ -367,6 +387,10 @@ const StickersPage = () => {
     if (sticker.isVideo) return "视频";
     return "静态";
   };
+
+  const staticStickerPacks = stickerPacks.filter(
+    (pack) => !pack.stickerType || pack.stickerType === "static"
+  );
 
   if (isLoading) {
     return <StickersSkeleton />;
@@ -764,21 +788,61 @@ const StickersPage = () => {
               导入贴纸
             </DialogTitle>
             <DialogDescription>
-              上传图片创建 Telegram 贴纸包，图片需为 512x512 的 PNG 或 WebP 格式
+              上传图片创建 Telegram 贴纸包，支持 PNG/WebP/JPG/JPEG/GIF，系统会自动转换为贴纸格式
             </DialogDescription>
           </DialogHeader>
 
           {!importResult ? (
             <div className="space-y-4 py-4">
               <div>
-                <Label>贴纸包名称 *</Label>
-                <Input
-                  value={importTitle}
-                  onChange={(e) => setImportTitle(e.target.value)}
-                  placeholder="例如: 我的表情包"
+                <Label>导入方式 *</Label>
+                <Tabs
+                  value={importMode}
+                  onValueChange={(v) => {
+                    setImportMode(v as "new" | "existing");
+                    setImportResult(null);
+                  }}
                   className="mt-2"
-                />
+                >
+                  <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="new">新建贴纸包</TabsTrigger>
+                    <TabsTrigger value="existing">导入到已有贴纸包</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
+
+              {importMode === "new" ? (
+                <div>
+                  <Label>贴纸包名称 *</Label>
+                  <Input
+                    value={importTitle}
+                    onChange={(e) => setImportTitle(e.target.value)}
+                    placeholder="例如: 我的表情包"
+                    className="mt-2"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <Label>选择已有贴纸包 *</Label>
+                  <select
+                    value={importPackName}
+                    onChange={(e) => setImportPackName(e.target.value)}
+                    className="mt-2 w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">请选择贴纸包</option>
+                    {staticStickerPacks.map((pack) => (
+                      <option key={pack.id} value={pack.name}>
+                        {pack.title} ({pack.stickerCount}/120)
+                      </option>
+                    ))}
+                  </select>
+                  {staticStickerPacks.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      当前没有可导入的静态贴纸包，请先创建一个静态贴纸包
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <Label>默认表情</Label>
@@ -823,9 +887,11 @@ const StickersPage = () => {
                     <StickerIcon className="w-8 h-8 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-lg">创建成功</h3>
+                    <h3 className="font-semibold text-lg">导入成功</h3>
                     <p className="text-muted-foreground">
-                      成功创建贴纸包，共 {importResult.stickerCount} 个贴纸
+                      {importResult.mode === "existing"
+                        ? `成功添加 ${importResult.stickerCount} 个贴纸到 ${importResult.packTitle || importResult.packName}`
+                        : `成功创建贴纸包，共 ${importResult.stickerCount} 个贴纸`}
                     </p>
                   </div>
                   {importResult.link && (
@@ -872,10 +938,14 @@ const StickersPage = () => {
                 </Button>
                 <Button
                   onClick={handleImport}
-                  disabled={isImporting || importFiles.length === 0 || !importTitle.trim()}
+                  disabled={
+                    isImporting ||
+                    importFiles.length === 0 ||
+                    (importMode === "new" ? !importTitle.trim() : !importPackName)
+                  }
                 >
                   {isImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  创建贴纸包
+                  {importMode === "new" ? "创建贴纸包" : "导入到贴纸包"}
                 </Button>
               </>
             ) : (

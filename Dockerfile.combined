@@ -35,7 +35,7 @@ COPY backend/package*.json ./
 
 # 安装后端依赖（不含 devDependencies）
 # 这一步在构建机器上执行，避免 QEMU 问题
-RUN npm install --production --ignore-scripts
+RUN npm install --production
 
 # ===== Stage 3: 最终镜像 (目标架构) =====
 FROM node:20-alpine

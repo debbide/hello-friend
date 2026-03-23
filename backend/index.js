@@ -1334,6 +1334,7 @@ const zlib = require('zlib');
 const { promisify } = require('util');
 const { execFile } = require('child_process');
 const renderLottie = require('puppeteer-lottie');
+const sharp = require('sharp');
 const execFileAsync = promisify(execFile);
 const stickerCacheDir = path.join(getDataPath(), 'cache', 'stickers');
 const puppeteerWSEndpoint = process.env.PUPPETEER_WS_ENDPOINT || null;
@@ -1593,6 +1594,43 @@ async function getConvertedStickerFile(fileId, type) {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+const MAX_STICKERS_PER_PACK = 120;
+const STICKER_IMPORT_MAX_FILE_SIZE = 512 * 1024;
+const STICKER_IMPORT_ALLOWED_MIME_TYPES = new Set([
+  'image/png',
+  'image/webp',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+]);
+
+async function convertImageToStaticStickerPng(inputBuffer) {
+  const sizeAttempts = [512, 480, 448, 416, 384, 352, 320, 288, 256];
+
+  for (const size of sizeAttempts) {
+    const outputBuffer = await sharp(inputBuffer, { animated: false, failOn: 'none' })
+      .rotate()
+      .resize(size, size, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        withoutEnlargement: true,
+      })
+      .png({
+        compressionLevel: 9,
+        palette: true,
+        quality: 90,
+        effort: 8,
+      })
+      .toBuffer();
+
+    if (outputBuffer.length <= STICKER_IMPORT_MAX_FILE_SIZE) {
+      return outputBuffer;
+    }
+  }
+
+  throw new Error('图片转换后仍超过 512KB，请使用更简单或更小尺寸的图片');
 }
 
 // 获取所有贴纸包
@@ -1908,15 +1946,14 @@ const multer = require('multer');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 512 * 1024, // 512KB per file
+    fileSize: STICKER_IMPORT_MAX_FILE_SIZE,
     files: 120, // 最多 120 个文件
   },
   fileFilter: (req, file, cb) => {
-    // 只接受 PNG 和 WebP
-    if (file.mimetype === 'image/png' || file.mimetype === 'image/webp') {
+    if (STICKER_IMPORT_ALLOWED_MIME_TYPES.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('只支持 PNG 和 WebP 格式'));
+      cb(new Error('只支持 PNG/WebP/JPG/JPEG/GIF 格式'));
     }
   },
 });
@@ -2017,6 +2054,8 @@ app.post('/api/stickers/import', upload.array('stickers', 120), async (req, res)
   }
 
   const files = req.files;
+  const packMode = req.body.packMode === 'existing' ? 'existing' : 'new';
+  const targetPackName = String(req.body.packName || '').trim();
   const packTitle = req.body.title || `导入贴纸包 ${new Date().toLocaleDateString('zh-CN')}`;
   const emojis = req.body.emojis || '😀'; // 默认表情
 
@@ -2024,69 +2063,146 @@ app.post('/api/stickers/import', upload.array('stickers', 120), async (req, res)
     return res.status(400).json({ success: false, error: '请上传贴纸图片文件' });
   }
 
+  if (packMode === 'existing' && !targetPackName) {
+    return res.status(400).json({ success: false, error: '请选择要导入的贴纸包' });
+  }
+
   try {
     const botInfo = await currentBot.telegram.getMe();
     const botUsername = botInfo.username;
     const userId = Number(settings.adminId);
-    const packName = `import_${Date.now()}_by_${botUsername}`;
-
-    // 创建贴纸包（使用第一个文件）
-    const firstFile = files[0];
-
-    await currentBot.telegram.createNewStickerSet(
-      userId,
-      packName,
-      packTitle,
-      {
-        png_sticker: { source: firstFile.buffer },
-        emojis: emojis,
-      }
-    );
-
-    logger.info(`创建导入贴纸包: ${packName}`);
-
-    // 添加剩余贴纸
-    let addedCount = 1;
+    let packName = targetPackName;
+    let finalPackTitle = packTitle;
+    let addedCount = 0;
     const errors = [];
 
-    for (let i = 1; i < files.length; i++) {
-      try {
-        await currentBot.telegram.addStickerToSet(
-          userId,
-          packName,
-          {
-            png_sticker: { source: files[i].buffer },
-            emojis: emojis,
-          }
-        );
-        addedCount++;
+    if (packMode === 'existing') {
+      const stickerSet = await currentBot.telegram.getStickerSet(targetPackName);
+      const isStaticPack = !stickerSet.is_animated && !stickerSet.is_video;
 
-        // 每添加 5 个暂停一下
-        if (i % 5 === 0) {
-          await new Promise(r => setTimeout(r, 300));
-        }
-      } catch (e) {
-        errors.push(`文件 ${i + 1}: ${e.message}`);
-        logger.warn(`添加贴纸失败: ${e.message}`);
+      if (!isStaticPack) {
+        return res.status(400).json({
+          success: false,
+          error: '当前仅支持导入图片到静态贴纸包（动态/视频贴纸包暂不支持）',
+        });
       }
+
+      const remainingSlots = MAX_STICKERS_PER_PACK - stickerSet.stickers.length;
+      if (remainingSlots <= 0) {
+        return res.status(400).json({ success: false, error: '贴纸包已满（最多 120 个贴纸）' });
+      }
+      if (files.length > remainingSlots) {
+        return res.status(400).json({
+          success: false,
+          error: `贴纸包剩余容量不足，还可添加 ${remainingSlots} 个贴纸`,
+        });
+      }
+
+      finalPackTitle = stickerSet.title || targetPackName;
+
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const stickerBuffer = await convertImageToStaticStickerPng(files[i].buffer);
+          await currentBot.telegram.addStickerToSet(
+            userId,
+            packName,
+            {
+              png_sticker: { source: stickerBuffer },
+              emojis: emojis,
+            }
+          );
+          addedCount++;
+
+          if (i % 5 === 0) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        } catch (e) {
+          errors.push(`文件 ${i + 1}: ${e.message}`);
+          logger.warn(`添加贴纸失败: ${e.message}`);
+        }
+      }
+
+      if (addedCount === 0) {
+        return res.status(500).json({ success: false, error: '所有图片都导入失败，请检查图片格式或大小' });
+      }
+
+      const localPackRecord = storage.getUserStickerPacks().find(p => p.name === packName);
+      if (localPackRecord) {
+        storage.updateUserStickerPack(localPackRecord.userId, packName, {
+          title: finalPackTitle,
+          stickerType: 'static',
+          stickerCount: (localPackRecord.stickerCount || 0) + addedCount,
+        });
+      } else {
+        storage.addUserStickerPack({
+          userId: settings.adminId.toString(),
+          name: packName,
+          title: finalPackTitle,
+          stickerType: 'static',
+          stickerCount: stickerSet.stickers.length + addedCount,
+          isImported: true,
+        });
+      }
+    } else {
+      packName = `import_${Date.now()}_by_${botUsername}`;
+
+      const firstFile = files[0];
+      const firstStickerBuffer = await convertImageToStaticStickerPng(firstFile.buffer);
+
+      await currentBot.telegram.createNewStickerSet(
+        userId,
+        packName,
+        finalPackTitle,
+        {
+          png_sticker: { source: firstStickerBuffer },
+          emojis: emojis,
+        }
+      );
+
+      logger.info(`创建导入贴纸包: ${packName}`);
+      addedCount = 1;
+
+      for (let i = 1; i < files.length; i++) {
+        try {
+          const stickerBuffer = await convertImageToStaticStickerPng(files[i].buffer);
+          await currentBot.telegram.addStickerToSet(
+            userId,
+            packName,
+            {
+              png_sticker: { source: stickerBuffer },
+              emojis: emojis,
+            }
+          );
+          addedCount++;
+
+          if (i % 5 === 0) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        } catch (e) {
+          errors.push(`文件 ${i + 1}: ${e.message}`);
+          logger.warn(`添加贴纸失败: ${e.message}`);
+        }
+      }
+
+      storage.addUserStickerPack({
+        userId: settings.adminId.toString(),
+        name: packName,
+        title: finalPackTitle,
+        stickerType: 'static',
+        stickerCount: addedCount,
+        isImported: true,
+      });
     }
 
-    // 保存贴纸包记录
-    storage.addUserStickerPack({
-      userId: settings.adminId.toString(),
-      name: packName,
-      title: packTitle,
-      stickerCount: addedCount,
-      isImported: true,
-    });
-
-    storage.addLog('info', `导入贴纸包: ${packTitle} (${addedCount} 个)`, 'sticker');
+    const actionLabel = packMode === 'existing' ? '导入到已有贴纸包' : '导入创建贴纸包';
+    storage.addLog('info', `${actionLabel}: ${finalPackTitle} (${addedCount} 个)`, 'sticker');
 
     res.json({
       success: true,
       data: {
+        mode: packMode,
         packName,
-        packTitle,
+        packTitle: finalPackTitle,
         stickerCount: addedCount,
         totalUploaded: files.length,
         errors: errors.length > 0 ? errors : undefined,
@@ -2110,7 +2226,7 @@ app.use((err, req, res, next) => {
     }
     return res.status(400).json({ success: false, error: err.message });
   }
-  if (err.message === '只支持 PNG 和 WebP 格式') {
+  if (err.message === '只支持 PNG/WebP/JPG/JPEG/GIF 格式') {
     return res.status(400).json({ success: false, error: err.message });
   }
   next(err);

@@ -879,7 +879,13 @@ export const stickersApi = {
   },
 
   // 导入贴纸（创建贴纸包）
-  async import(files: File[], title: string, emojis: string = '😀'): Promise<ApiResponse<{
+  async import(
+    files: File[],
+    title: string,
+    emojis: string = '😀',
+    options?: { packMode?: 'new' | 'existing'; packName?: string }
+  ): Promise<ApiResponse<{
+    mode: 'new' | 'existing';
     packName: string;
     packTitle: string;
     stickerCount: number;
@@ -891,6 +897,12 @@ export const stickersApi = {
     files.forEach(file => formData.append('stickers', file));
     formData.append('title', title);
     formData.append('emojis', emojis);
+    if (options?.packMode) {
+      formData.append('packMode', options.packMode);
+    }
+    if (options?.packName) {
+      formData.append('packName', options.packName);
+    }
 
     const token = localStorage.getItem('bot_admin_token');
     const url = `${BACKEND_URL}/api/stickers/import`;
