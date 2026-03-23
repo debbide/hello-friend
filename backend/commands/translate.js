@@ -87,6 +87,7 @@ function setup(bot, { logger }) {
         text = ctx.message.reply_to_message.text;
       } else {
         return ctx.reply(
+          '🧭 <b>主菜单 / 工具 / 翻译</b>\n\n' +
           '🌐 <b>翻译助手</b>\n\n' +
           '<code>/tr 文本</code> - 翻译到中文\n' +
           '<code>/tr en 文本</code> - 翻译到英语\n' +
@@ -97,7 +98,7 @@ function setup(bot, { logger }) {
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [[
-                { text: '🔙 返回工具菜单', callback_data: 'menu_tools' },
+                { text: '🔙 返回上一级', callback_data: 'menu_tools' },
                 { text: '🏠 主菜单', callback_data: 'menu_main' },
               ]],
             },
@@ -133,7 +134,8 @@ function setup(bot, { logger }) {
         ctx.chat.id,
         loading.message_id,
         null,
-        `🌐 <b>翻译结果</b>\n\n` +
+          `🧭 <b>主菜单 / 工具 / 翻译结果</b>\n\n` +
+          `🌐 <b>翻译结果</b>\n\n` +
         `📝 原文 (${sourceName}):\n<i>${text.substring(0, 200)}${text.length > 200 ? '...' : ''}</i>\n\n` +
         `✨ 译文 (${targetName}):\n<b>${result.text}</b>`,
         { 
@@ -145,7 +147,7 @@ function setup(bot, { logger }) {
                 { text: '📋 复制', callback_data: 'tr_copy' },
               ],
               [
-                { text: '🔙 返回工具菜单', callback_data: 'menu_tools' },
+                { text: '🔙 返回上一级', callback_data: 'menu_tools' },
                 { text: '🏠 主菜单', callback_data: 'menu_main' },
               ],
             ]

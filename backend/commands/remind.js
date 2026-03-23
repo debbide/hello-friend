@@ -103,7 +103,7 @@ function generateRemindersButtons(reminders, page = 0) {
 
   buttons.push([{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }]);
   buttons.push([
-    { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+    { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
     { text: '🏠 主菜单', callback_data: 'menu_main' },
   ]);
 
@@ -123,6 +123,7 @@ function setup(bot, { logger }) {
     const args = ctx.message.text.split(' ').slice(1);
     if (args.length < 2) {
       return ctx.reply(
+        '🧭 <b>主菜单 / 提醒</b>\n\n' +
         '⏰ <b>提醒助手</b>\n\n' +
         '<code>/remind 10m 开会</code> - 10分钟后\n' +
         '<code>/remind 2h 吃饭</code> - 2小时后\n' +
@@ -135,7 +136,7 @@ function setup(bot, { logger }) {
             inline_keyboard: [[
               { text: '📋 查看提醒列表', callback_data: 'reminders_list' }
             ], [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ]]
           }
@@ -212,13 +213,19 @@ function setup(bot, { logger }) {
     if (reminders.length === 0) {
       return ctx.reply('📭 暂无提醒', {
         reply_markup: {
-          inline_keyboard: [[{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }]]
+          inline_keyboard: [
+            [{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }],
+            [
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ],
+          ]
         }
       });
     }
 
     ctx.reply(
-      `⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
+      `🧭 <b>主菜单 / 提醒 / 列表</b>\n\n⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
       { 
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateRemindersButtons(reminders, 0) }
@@ -247,7 +254,7 @@ function setup(bot, { logger }) {
     const reminders = loadReminders().filter(r => r.userId === userId);
 
     await ctx.editMessageText(
-      `⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
+      `🧭 <b>主菜单 / 提醒 / 列表</b>\n\n⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateRemindersButtons(reminders, page) }
@@ -267,7 +274,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }],
             [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -298,6 +305,7 @@ function setup(bot, { logger }) {
     const remaining = formatTimeRemaining(reminder.targetTime);
 
     await ctx.editMessageText(
+      `🧭 <b>主菜单 / 提醒 / 详情</b>\n\n` +
       `⏰ <b>提醒详情</b>\n\n` +
       `📝 ${reminder.message}\n\n` +
       `🕐 触发时间: ${targetTime}\n` +
@@ -309,7 +317,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [
               { text: '🗑️ 删除', callback_data: `remind_del_confirm_${reminder.id}` },
-              { text: '🔙 返回列表', callback_data: 'reminders_list' },
+              { text: '🔙 返回上一级', callback_data: 'reminders_list' },
             ]
           ]
         }
@@ -359,7 +367,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [{ text: '➕ 添加提醒', callback_data: 'remind_add_prompt' }],
             [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -367,7 +375,7 @@ function setup(bot, { logger }) {
       });
     } else {
       await ctx.editMessageText(
-        `⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
+        `🧭 <b>主菜单 / 提醒 / 列表</b>\n\n⏰ <b>提醒列表</b>\n\n📊 共 ${reminders.length} 个提醒`,
         {
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: generateRemindersButtons(reminders, 0) }
@@ -380,6 +388,7 @@ function setup(bot, { logger }) {
   bot.action('remind_add_prompt', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) {}
     await ctx.editMessageText(
+      '🧭 <b>主菜单 / 提醒 / 添加</b>\n\n' +
       '➕ <b>添加提醒</b>\n\n' +
       '发送命令设置提醒：\n' +
       '<code>/remind 10m 内容</code> - 10分钟后\n' +
@@ -389,7 +398,7 @@ function setup(bot, { logger }) {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+            { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
             { text: '🏠 主菜单', callback_data: 'menu_main' },
           ]],
         },

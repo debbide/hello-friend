@@ -8,6 +8,8 @@ const MAX_STICKERS_PER_PACK = 120;
 
 // 临时存储等待创建贴纸包的用户状态
 const pendingPackCreation = new Map();
+const expiredPackCreation = new Map();
+const pendingCreatepackConfirm = new Map();
 
 // 临时存储用户最近发送的贴纸（用于快速添加按钮）
 const pendingStickers = new Map();
@@ -42,7 +44,7 @@ function generateStickersButtons(stickers, page = 0) {
   }
 
   buttons.push([
-    { text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' },
+    { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
     { text: '🏠 主菜单', callback_data: 'menu_main' },
   ]);
 
@@ -51,6 +53,43 @@ function generateStickersButtons(stickers, page = 0) {
 
 function setup(bot, { logger, settings }) {
   const fetch = require('node-fetch');
+
+  function schedulePendingPackTimeout(userId, createdAt, packTitle) {
+    setTimeout(async () => {
+      const pending = pendingPackCreation.get(userId);
+      if (!pending || pending.createdAt !== createdAt) {
+        return;
+      }
+
+      pendingPackCreation.delete(userId);
+      expiredPackCreation.set(userId, {
+        title: packTitle,
+        expiredAt: Date.now(),
+      });
+
+      try {
+        await bot.telegram.sendMessage(
+          userId,
+          `⌛ <b>创建贴纸包超时</b>\n\n` +
+          `你刚才的贴纸包「${packTitle}」等待了 5 分钟仍未收到首个贴纸。`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '♻️ 继续刚才的创建', callback_data: 'newpack_resume' }],
+                [
+                  { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+                  { text: '🏠 主菜单', callback_data: 'menu_main' },
+                ],
+              ],
+            },
+          }
+        );
+      } catch (e) {
+        logger.warn(`发送贴纸包超时提示失败: ${e.message}`);
+      }
+    }, 5 * 60 * 1000);
+  }
 
   // 辅助函数：获取贴纸类型
   function getStickerType(sticker) {
@@ -66,6 +105,129 @@ function setup(bot, { logger, settings }) {
       case 'video': return '视频';
       default: return '静态';
     }
+  }
+
+  async function executeBulkCreateFromCollection(ctx, userId, userIdNum, packTitle, staticStickers) {
+    const botInfo = await ctx.telegram.getMe();
+    const botUsername = botInfo.username;
+    const totalPacks = Math.ceil(staticStickers.length / MAX_STICKERS_PER_PACK);
+
+    await ctx.reply(
+      `🧭 <b>主菜单 / 贴纸 / 批量建包</b>\n\n` +
+      `⏳ 正在创建贴纸包，请稍候...\n\n` +
+      `📊 共 ${staticStickers.length} 个静态贴纸\n` +
+      `📦 将创建 ${totalPacks} 个贴纸包`,
+      { parse_mode: 'HTML' }
+    );
+
+    const createdPacks = [];
+
+    for (let packIndex = 0; packIndex < totalPacks; packIndex++) {
+      const startIdx = packIndex * MAX_STICKERS_PER_PACK;
+      const endIdx = Math.min(startIdx + MAX_STICKERS_PER_PACK, staticStickers.length);
+      const packStickers = staticStickers.slice(startIdx, endIdx);
+
+      const packSuffix = totalPacks > 1 ? ` (${packIndex + 1})` : '';
+      const currentPackTitle = `${packTitle}${packSuffix}`;
+      const packName = `u${userId}_${Date.now()}_${packIndex}_by_${botUsername}`;
+
+      try {
+        const firstSticker = packStickers[0];
+        const file = await ctx.telegram.getFile(firstSticker.fileId);
+        const fileUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${file.file_path}`;
+        const response = await fetch(fileUrl);
+        const buffer = await response.buffer();
+
+        await ctx.telegram.createNewStickerSet(
+          userIdNum,
+          packName,
+          currentPackTitle,
+          {
+            png_sticker: { source: buffer },
+            emojis: firstSticker.emoji || '😀',
+          }
+        );
+
+        logger.info(`创建贴纸包: ${packName} (用户: ${userId})`);
+
+        let addedCount = 1;
+        for (let i = 1; i < packStickers.length; i++) {
+          try {
+            const sticker = packStickers[i];
+            const stickerFile = await ctx.telegram.getFile(sticker.fileId);
+            const stickerUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${stickerFile.file_path}`;
+            const stickerResponse = await fetch(stickerUrl);
+            const stickerBuffer = await stickerResponse.buffer();
+
+            await ctx.telegram.addStickerToSet(
+              userIdNum,
+              packName,
+              {
+                png_sticker: { source: stickerBuffer },
+                emojis: sticker.emoji || '😀',
+              }
+            );
+            addedCount++;
+
+            if (i % 5 === 0) {
+              await new Promise(r => setTimeout(r, 300));
+            }
+          } catch (e) {
+            logger.warn(`添加贴纸失败: ${e.message}`);
+          }
+        }
+
+        storage.addUserStickerPack({
+          userId,
+          name: packName,
+          title: currentPackTitle,
+          stickerCount: addedCount,
+        });
+
+        createdPacks.push({
+          name: packName,
+          title: currentPackTitle,
+          count: addedCount,
+          link: `https://t.me/addstickers/${packName}`,
+        });
+
+        if (totalPacks > 1) {
+          await ctx.reply(`✅ 贴纸包 ${packIndex + 1}/${totalPacks} 创建完成 (${addedCount} 个贴纸)`);
+        }
+
+        if (packIndex < totalPacks - 1) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      } catch (error) {
+        logger.error(`创建贴纸包 ${packIndex + 1} 失败: ${error.message}`);
+        await ctx.reply(`❌ 贴纸包 ${packIndex + 1} 创建失败: ${error.message}`);
+      }
+    }
+
+    if (createdPacks.length === 0) {
+      return ctx.reply('❌ 所有贴纸包创建失败');
+    }
+
+    const buttons = createdPacks.map(pack => [{
+      text: `📦 ${pack.title} (${pack.count})`,
+      url: pack.link,
+    }]);
+    buttons.push([
+      { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+      { text: '🏠 主菜单', callback_data: 'menu_main' },
+    ]);
+
+    await ctx.reply(
+      `🧭 <b>主菜单 / 贴纸 / 批量建包完成</b>\n\n` +
+      `🎉 <b>贴纸包创建完成！</b>\n\n` +
+      `📦 共创建 ${createdPacks.length} 个贴纸包\n` +
+      `🎨 共 ${createdPacks.reduce((sum, p) => sum + p.count, 0)} 个贴纸\n\n` +
+      `点击下方按钮添加到你的贴纸面板：`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: buttons }
+      }
+    );
   }
 
   // 辅助函数：添加贴纸到贴纸包
@@ -143,6 +305,7 @@ function setup(bot, { logger, settings }) {
     const pendingPack = pendingPackCreation.get(userId);
     if (pendingPack) {
       pendingPackCreation.delete(userId);
+      expiredPackCreation.delete(userId);
 
       const stickerType = getStickerType(sticker);
 
@@ -188,6 +351,7 @@ function setup(bot, { logger, settings }) {
         logger.info(`创建${getTypeLabel(stickerType)}贴纸包: ${packName} (用户: ${userId})`);
 
         return ctx.reply(
+          `🧭 <b>主菜单 / 贴纸 / 创建完成</b>\n\n` +
           `🎉 <b>${getTypeLabel(stickerType)}贴纸包创建成功！</b>\n\n` +
           `📦 名称: ${pendingPack.title}\n` +
           `🎨 已添加 1 个贴纸\n\n` +
@@ -199,6 +363,10 @@ function setup(bot, { logger, settings }) {
               inline_keyboard: [
                 [{ text: '📦 查看贴纸包', url: `https://t.me/addstickers/${packName}` }],
                 [{ text: '📋 我的贴纸包', callback_data: 'mypack_list' }],
+                [
+                  { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+                  { text: '🏠 主菜单', callback_data: 'menu_main' },
+                ],
               ]
             }
           }
@@ -434,10 +602,51 @@ function setup(bot, { logger, settings }) {
     try { await ctx.answerCbQuery(); } catch (e) {}
 
     await ctx.editMessageText(
+      '🧭 <b>主菜单 / 贴纸 / 创建贴纸包</b>\n\n' +
       '📦 <b>创建新贴纸包</b>\n\n' +
       '请发送贴纸包名称：\n\n' +
       '例如: <code>/newpack 我的表情包</code>',
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+            { text: '🏠 主菜单', callback_data: 'menu_main' },
+          ]],
+        },
+      }
+    );
+  });
+
+  bot.action('newpack_resume', async (ctx) => {
+    try { await ctx.answerCbQuery(); } catch (e) {}
+    const userId = ctx.from.id.toString();
+    const snapshot = expiredPackCreation.get(userId);
+
+    if (!snapshot || Date.now() - snapshot.expiredAt > 30 * 60 * 1000) {
+      return ctx.answerCbQuery('没有可恢复的创建流程');
+    }
+
+    const createdAt = Date.now();
+    pendingPackCreation.set(userId, {
+      title: snapshot.title,
+      createdAt,
+    });
+    schedulePendingPackTimeout(userId, createdAt, snapshot.title);
+
+    await ctx.editMessageText(
+      `♻️ <b>已恢复创建流程</b>\n\n` +
+      `贴纸包名称: <b>${snapshot.title}</b>\n\n` +
+      `请现在发送一个贴纸作为首个贴纸。`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+            { text: '🏠 主菜单', callback_data: 'menu_main' },
+          ]],
+        },
+      }
     );
   });
 
@@ -461,24 +670,32 @@ function setup(bot, { logger, settings }) {
       return ctx.reply('❌ 贴纸包名称过长，最多 64 个字符');
     }
 
-    // 保存等待状态
+    const createdAt = Date.now();
     pendingPackCreation.set(userId, {
       title: packTitle,
-      createdAt: Date.now(),
+      createdAt,
+    });
+    expiredPackCreation.set(userId, {
+      title: packTitle,
+      expiredAt: Date.now(),
     });
 
-    // 5 分钟后自动清除等待状态
-    setTimeout(() => {
-      if (pendingPackCreation.get(userId)?.createdAt === pendingPackCreation.get(userId)?.createdAt) {
-        pendingPackCreation.delete(userId);
-      }
-    }, 5 * 60 * 1000);
+    schedulePendingPackTimeout(userId, createdAt, packTitle);
 
     ctx.reply(
+      `🧭 <b>主菜单 / 贴纸 / 创建贴纸包</b>\n\n` +
       `📦 准备创建贴纸包: <b>${packTitle}</b>\n\n` +
       `请现在转发一个贴纸给我，作为贴纸包的第一个贴纸\n\n` +
       `💡 支持静态、动态、视频贴纸（贴纸包类型由第一个贴纸决定）`,
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+            { text: '🏠 主菜单', callback_data: 'menu_main' },
+          ]],
+        },
+      }
     );
   });
 
@@ -496,6 +713,7 @@ function setup(bot, { logger, settings }) {
     }
 
     ctx.reply(
+      `🧭 <b>主菜单 / 贴纸 / 收藏列表</b>\n\n` +
       `🎨 <b>贴纸收藏</b>\n\n` +
       `📊 共 ${stickers.length} 个贴纸\n\n` +
       `点击表情查看贴纸`,
@@ -530,7 +748,7 @@ function setup(bot, { logger, settings }) {
 
     buttons.push([{ text: '➕ 创建新贴纸包', callback_data: 'newpack_start' }]);
     buttons.push([
-      { text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' },
+      { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
       { text: '🏠 主菜单', callback_data: 'menu_main' },
     ]);
 
@@ -561,7 +779,7 @@ function setup(bot, { logger, settings }) {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [[
-              { text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' },
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ]],
           },
@@ -578,7 +796,7 @@ function setup(bot, { logger, settings }) {
     });
 
     buttons.push([
-      { text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' },
+      { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
       { text: '🏠 主菜单', callback_data: 'menu_main' },
     ]);
 
@@ -595,7 +813,9 @@ function setup(bot, { logger, settings }) {
   bot.command('createpack', async (ctx) => {
     const userId = ctx.from.id.toString();
     const userIdNum = ctx.from.id;
-    const packTitle = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    const rawTitle = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    const isConfirmed = /\s--yes$/.test(rawTitle);
+    const packTitle = rawTitle.replace(/\s--yes$/, '').trim();
 
     if (!packTitle) {
       return ctx.reply(
@@ -610,137 +830,93 @@ function setup(bot, { logger, settings }) {
     // 获取用户收藏的贴纸
     const stickers = storage.getStickers(userId);
     if (stickers.length === 0) {
-      return ctx.reply('❌ 你还没有收藏任何贴纸\n\n请先转发贴纸给我收藏，或使用 /newpack 创建空贴纸包');
+      return ctx.reply(
+        '❌ 你还没有收藏任何贴纸\n\n请先转发贴纸给我收藏，或使用 /newpack 创建空贴纸包',
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ]],
+          },
+        }
+      );
     }
 
     // 只能用静态贴纸创建
     const staticStickers = stickers.filter(s => !s.isAnimated && !s.isVideo);
     if (staticStickers.length === 0) {
-      return ctx.reply('❌ 你收藏的都是动态贴纸，暂不支持批量创建\n\n请使用 /newpack 创建贴纸包后逐个添加');
+      return ctx.reply(
+        '❌ 你收藏的都是动态贴纸，暂不支持批量创建\n\n请使用 /newpack 创建贴纸包后逐个添加',
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ]],
+          },
+        }
+      );
     }
 
-    // 获取 Bot 用户名
-    const botInfo = await ctx.telegram.getMe();
-    const botUsername = botInfo.username;
-
-    // 计算需要创建多少个贴纸包
     const totalPacks = Math.ceil(staticStickers.length / MAX_STICKERS_PER_PACK);
 
-    await ctx.reply(
-      `⏳ 正在创建贴纸包，请稍候...\n\n` +
-      `📊 共 ${staticStickers.length} 个静态贴纸\n` +
-      `📦 将创建 ${totalPacks} 个贴纸包`
-    );
+    if (!isConfirmed) {
+      const token = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      pendingCreatepackConfirm.set(token, {
+        userId,
+        packTitle,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
 
-    const createdPacks = [];
+      setTimeout(() => pendingCreatepackConfirm.delete(token), 5 * 60 * 1000);
 
-    for (let packIndex = 0; packIndex < totalPacks; packIndex++) {
-      const startIdx = packIndex * MAX_STICKERS_PER_PACK;
-      const endIdx = Math.min(startIdx + MAX_STICKERS_PER_PACK, staticStickers.length);
-      const packStickers = staticStickers.slice(startIdx, endIdx);
-
-      const packSuffix = totalPacks > 1 ? ` (${packIndex + 1})` : '';
-      const currentPackTitle = `${packTitle}${packSuffix}`;
-      const packName = `u${userId}_${Date.now()}_${packIndex}_by_${botUsername}`;
-
-      try {
-        // 获取第一个贴纸的文件
-        const firstSticker = packStickers[0];
-        const file = await ctx.telegram.getFile(firstSticker.fileId);
-        const fileUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${file.file_path}`;
-        const response = await fetch(fileUrl);
-        const buffer = await response.buffer();
-
-        // 创建贴纸包
-        await ctx.telegram.createNewStickerSet(
-          userIdNum,
-          packName,
-          currentPackTitle,
-          {
-            png_sticker: { source: buffer },
-            emojis: firstSticker.emoji || '😀',
-          }
-        );
-
-        logger.info(`创建贴纸包: ${packName} (用户: ${userId})`);
-
-        // 添加剩余贴纸
-        let addedCount = 1;
-
-        for (let i = 1; i < packStickers.length; i++) {
-          try {
-            const sticker = packStickers[i];
-            const stickerFile = await ctx.telegram.getFile(sticker.fileId);
-            const stickerUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${stickerFile.file_path}`;
-            const stickerResponse = await fetch(stickerUrl);
-            const stickerBuffer = await stickerResponse.buffer();
-
-            await ctx.telegram.addStickerToSet(
-              userIdNum,
-              packName,
-              {
-                png_sticker: { source: stickerBuffer },
-                emojis: sticker.emoji || '😀',
-              }
-            );
-            addedCount++;
-
-            if (i % 5 === 0) {
-              await new Promise(r => setTimeout(r, 300));
-            }
-          } catch (e) {
-            logger.warn(`添加贴纸失败: ${e.message}`);
-          }
+      return ctx.reply(
+        `⚠️ <b>批量建包确认</b>\n\n` +
+        `名称: <b>${packTitle}</b>\n` +
+        `静态贴纸: ${staticStickers.length} 个\n` +
+        `预计创建: ${totalPacks} 个贴纸包\n\n` +
+        `该操作会消耗较长时间，确认继续吗？`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ 确认创建', callback_data: `createpack_confirm_${token}` }],
+              [
+                { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+                { text: '🏠 主菜单', callback_data: 'menu_main' },
+              ],
+            ],
+          },
         }
-
-        // 保存贴纸包信息
-        storage.addUserStickerPack({
-          userId,
-          name: packName,
-          title: currentPackTitle,
-          stickerCount: addedCount,
-        });
-
-        createdPacks.push({
-          name: packName,
-          title: currentPackTitle,
-          count: addedCount,
-          link: `https://t.me/addstickers/${packName}`,
-        });
-
-        if (totalPacks > 1) {
-          await ctx.reply(`✅ 贴纸包 ${packIndex + 1}/${totalPacks} 创建完成 (${addedCount} 个贴纸)`);
-        }
-
-        if (packIndex < totalPacks - 1) {
-          await new Promise(r => setTimeout(r, 1000));
-        }
-
-      } catch (error) {
-        logger.error(`创建贴纸包 ${packIndex + 1} 失败: ${error.message}`);
-        await ctx.reply(`❌ 贴纸包 ${packIndex + 1} 创建失败: ${error.message}`);
-      }
+      );
     }
 
-    if (createdPacks.length === 0) {
-      return ctx.reply('❌ 所有贴纸包创建失败');
+    await executeBulkCreateFromCollection(ctx, userId, userIdNum, packTitle, staticStickers);
+  });
+
+  bot.action(/^createpack_confirm_(.+)$/, async (ctx) => {
+    try { await ctx.answerCbQuery(); } catch (e) {}
+
+    const token = ctx.match[1];
+    const snapshot = pendingCreatepackConfirm.get(token);
+    const userId = ctx.from.id.toString();
+    const userIdNum = ctx.from.id;
+
+    if (!snapshot || snapshot.userId !== userId || snapshot.expiresAt < Date.now()) {
+      return ctx.answerCbQuery('确认已过期，请重新执行 /createpack');
     }
 
-    const buttons = createdPacks.map(pack => [{
-      text: `📦 ${pack.title} (${pack.count})`,
-      url: pack.link,
-    }]);
+    pendingCreatepackConfirm.delete(token);
 
-    await ctx.reply(
-      `🎉 <b>贴纸包创建完成！</b>\n\n` +
-      `📦 共创建 ${createdPacks.length} 个贴纸包\n` +
-      `🎨 共 ${createdPacks.reduce((sum, p) => sum + p.count, 0)} 个贴纸\n\n` +
-      `点击下方按钮添加到你的贴纸面板：`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: buttons }
-      }
-    );
+    const stickers = storage.getStickers(userId);
+    const staticStickers = stickers.filter(s => !s.isAnimated && !s.isVideo);
+    if (staticStickers.length === 0) {
+      return ctx.editMessageText('❌ 当前没有可用于批量建包的静态贴纸');
+    }
+
+    await ctx.editMessageText('✅ 已确认，开始创建贴纸包...');
+    await executeBulkCreateFromCollection(ctx, userId, userIdNum, snapshot.packTitle, staticStickers);
   });
 
   // /sticker_groups 命令 - 查看贴纸分组
@@ -782,12 +958,12 @@ function setup(bot, { logger, settings }) {
 
     if (stickers.length === 0) {
       return ctx.editMessageText(
-        '📭 <b>暂无收藏的贴纸</b>\n\n💡 将贴纸转发给我即可收藏',
+        '🧭 <b>主菜单 / 贴纸</b>\n\n📭 <b>暂无收藏的贴纸</b>\n\n💡 将贴纸转发给我即可收藏',
         {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [[
-              { text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' },
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ]],
           },
@@ -796,7 +972,7 @@ function setup(bot, { logger, settings }) {
     }
 
     await ctx.editMessageText(
-      `🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸\n\n点击表情查看贴纸`,
+      `🧭 <b>主菜单 / 贴纸 / 收藏列表</b>\n\n🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸\n\n点击表情查看贴纸`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateStickersButtons(stickers, 0) }
@@ -812,7 +988,7 @@ function setup(bot, { logger, settings }) {
     const stickers = storage.getStickers(userId);
 
     await ctx.editMessageText(
-      `🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸\n\n点击表情查看贴纸`,
+      `🧭 <b>主菜单 / 贴纸 / 收藏列表</b>\n\n🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸\n\n点击表情查看贴纸`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateStickersButtons(stickers, page) }
@@ -871,13 +1047,15 @@ function setup(bot, { logger, settings }) {
 
     buttons.push([
       { text: '🏷️ 编辑标签', callback_data: `sticker_tag_${id.substring(0, 20)}` },
-      { text: '🗑️ 删除', callback_data: `sticker_del_${id.substring(0, 20)}` },
+      { text: '🗑️ 删除', callback_data: `sticker_del_confirm_${id.substring(0, 20)}` },
     ]);
     buttons.push([
-      { text: '🔙 返回列表', callback_data: 'stickers_list' },
+      { text: '🔙 返回上一级', callback_data: 'stickers_list' },
+      { text: '🏠 主菜单', callback_data: 'menu_main' },
     ]);
 
     await ctx.reply(
+      `🧭 <b>主菜单 / 贴纸 / 贴纸详情</b>\n\n` +
       `🎨 <b>贴纸详情</b>\n\n` +
       `${sticker.emoji ? `表情: ${sticker.emoji}` : ''}\n` +
       `${sticker.setName ? `贴纸包: ${sticker.setName}` : '单独贴纸'}\n` +
@@ -892,6 +1070,37 @@ function setup(bot, { logger, settings }) {
   });
 
   // 删除贴纸（使用临时存储的贴纸ID）
+  bot.action(/^sticker_del_confirm_(.+)$/, async (ctx) => {
+    try { await ctx.answerCbQuery(); } catch (e) {}
+    const idPart = ctx.match[1];
+    const userId = ctx.from.id.toString();
+
+    let stickerId = idPart;
+    const pendingSticker = pendingStickers.get(userId);
+    if (pendingSticker && pendingSticker.stickerId && pendingSticker.stickerId.startsWith(idPart)) {
+      stickerId = pendingSticker.stickerId;
+    }
+
+    await ctx.editMessageText(
+      '⚠️ <b>确认删除贴纸</b>\n\n删除后无法恢复，确定继续吗？',
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ 确认删除', callback_data: `sticker_del_${stickerId.substring(0, 20)}` },
+              { text: '❌ 取消', callback_data: 'stickers_list' },
+            ],
+            [
+              { text: '🔙 返回上一级', callback_data: 'stickers_list' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ],
+          ],
+        },
+      }
+    );
+  });
+
   bot.action(/^sticker_del_(.+)$/, async (ctx) => {
     const idPart = ctx.match[1];
     const userId = ctx.from.id.toString();
@@ -924,12 +1133,20 @@ function setup(bot, { logger, settings }) {
 
     if (stickers.length === 0) {
       await ctx.editMessageText(
-        '📭 <b>暂无收藏的贴纸</b>\n\n💡 将贴纸转发给我即可收藏',
-        { parse_mode: 'HTML' }
+        '🧭 <b>主菜单 / 贴纸</b>\n\n📭 <b>暂无收藏的贴纸</b>\n\n💡 将贴纸转发给我即可收藏',
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ]],
+          },
+        }
       );
     } else {
       await ctx.editMessageText(
-        `🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸`,
+        `🧭 <b>主菜单 / 贴纸 / 收藏列表</b>\n\n🎨 <b>贴纸收藏</b>\n\n📊 共 ${stickers.length} 个贴纸`,
         {
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: generateStickersButtons(stickers, 0) }
@@ -952,10 +1169,18 @@ function setup(bot, { logger, settings }) {
     }
 
     await ctx.editMessageText(
-      '🏷️ <b>添加标签</b>\n\n' +
+      '🧭 <b>主菜单 / 贴纸 / 标签</b>\n\n🏷️ <b>添加标签</b>\n\n' +
       '发送标签（多个用空格分隔）:\n' +
       `<code>/tag ${stickerId} 标签1 标签2</code>`,
-      { parse_mode: 'HTML' }
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🔙 返回上一级', callback_data: 'stickers_list' },
+            { text: '🏠 主菜单', callback_data: 'menu_main' },
+          ]],
+        },
+      }
     );
   });
 
@@ -989,7 +1214,13 @@ function setup(bot, { logger, settings }) {
       `✅ 标签已更新: ${tags.join(', ')}`,
       {
         reply_markup: {
-          inline_keyboard: [[{ text: '📋 查看收藏', callback_data: 'stickers_list' }]]
+          inline_keyboard: [
+            [{ text: '📋 查看收藏', callback_data: 'stickers_list' }],
+            [
+              { text: '🔙 返回上一级', callback_data: 'menu_stickers' },
+              { text: '🏠 主菜单', callback_data: 'menu_main' },
+            ],
+          ]
         }
       }
     );

@@ -55,7 +55,7 @@ function generateNotesButtons(notes, page = 0) {
 
   buttons.push([{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }]);
   buttons.push([
-    { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+    { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
     { text: '🏠 主菜单', callback_data: 'menu_main' },
   ]);
 
@@ -119,7 +119,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
             [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -128,7 +128,7 @@ function setup(bot, { logger }) {
     }
 
     ctx.reply(
-      `📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘\n\n点击查看详情，右侧按钮删除`,
+      `🧭 <b>主菜单 / 提醒 / 备忘列表</b>\n\n📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘\n\n点击查看详情，右侧按钮删除`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateNotesButtons(notes, 0) }
@@ -164,7 +164,7 @@ function setup(bot, { logger }) {
     const notes = loadNotes().filter(n => n.userId === userId);
 
     await ctx.editMessageText(
-      `📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘`,
+      `🧭 <b>主菜单 / 提醒 / 备忘列表</b>\n\n📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateNotesButtons(notes, page) }
@@ -184,7 +184,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
             [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -193,7 +193,7 @@ function setup(bot, { logger }) {
     }
 
     await ctx.editMessageText(
-      `📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘`,
+      `🧭 <b>主菜单 / 提醒 / 备忘列表</b>\n\n📝 <b>备忘录</b>\n\n📊 共 ${notes.length} 条备忘`,
       {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateNotesButtons(notes, 0) }
@@ -214,6 +214,7 @@ function setup(bot, { logger }) {
     const createdAt = new Date(note.createdAt).toLocaleString('zh-CN');
 
     await ctx.editMessageText(
+      `🧭 <b>主菜单 / 提醒 / 备忘详情</b>\n\n` +
       `📝 <b>备忘详情</b>\n\n` +
       `${note.content}\n\n` +
       `🕐 创建时间: ${createdAt}\n` +
@@ -224,7 +225,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [
               { text: '🗑️ 删除', callback_data: `note_del_confirm_${note.id}` },
-              { text: '🔙 返回列表', callback_data: 'notes_list' },
+              { text: '🔙 返回上一级', callback_data: 'notes_list' },
             ]
           ]
         }
@@ -276,7 +277,7 @@ function setup(bot, { logger }) {
           inline_keyboard: [
             [{ text: '➕ 添加备忘', callback_data: 'note_add_prompt' }],
             [
-              { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+              { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -284,7 +285,7 @@ function setup(bot, { logger }) {
       });
     } else {
       await ctx.editMessageText(
-        `📝 <b>备忘录</b>\n\n📊 共 ${userNotes.length} 条备忘`,
+        `🧭 <b>主菜单 / 提醒 / 备忘列表</b>\n\n📝 <b>备忘录</b>\n\n📊 共 ${userNotes.length} 条备忘`,
         {
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: generateNotesButtons(userNotes, 0) }
@@ -297,12 +298,12 @@ function setup(bot, { logger }) {
   bot.action('note_add_prompt', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) {}
     await ctx.editMessageText(
-      '➕ <b>添加备忘</b>\n\n发送命令添加：\n<code>/note 备忘内容</code>',
+      '🧭 <b>主菜单 / 提醒 / 添加备忘</b>\n\n➕ <b>添加备忘</b>\n\n发送命令添加：\n<code>/note 备忘内容</code>',
       {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '🔙 返回提醒菜单', callback_data: 'menu_reminders' },
+            { text: '🔙 返回上一级', callback_data: 'menu_reminders' },
             { text: '🏠 主菜单', callback_data: 'menu_main' },
           ]],
         },

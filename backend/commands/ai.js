@@ -15,6 +15,37 @@ const STREAM_UPDATE_INTERVAL = 800; // 更新间隔(毫秒)
 const TYPING_CHARS = ['▌', '█', '▌', ' ']; // 打字机光标效果
 
 function setup(bot, { logger }) {
+  async function generateAssistantReply(aiConfig, history) {
+    const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aiConfig.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: aiConfig.model || 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: '你是一个有帮助的助手，用中文回复。回答要简洁有条理。' },
+          ...history,
+        ],
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content;
+    if (!reply) {
+      throw new Error('AI 未返回有效内容');
+    }
+
+    return reply;
+  }
+
   // /chat 或 /c 命令
   const handleChat = async (ctx) => {
     const settings = loadSettings();
@@ -23,6 +54,7 @@ function setup(bot, { logger }) {
 
     if (!text) {
       return ctx.reply(
+        '🧭 <b>主菜单 / AI 助手</b>\n\n' +
         '💬 <b>AI 对话助手</b>\n\n' +
         '<code>/chat 内容</code> - 开始对话\n' +
         '<code>/c 内容</code> - 简写命令\n' +
@@ -34,7 +66,7 @@ function setup(bot, { logger }) {
             inline_keyboard: [
               [{ text: '🧹 清除记忆', callback_data: 'ai_clear_history' }],
               [
-                { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+                { text: '🔙 返回上一级', callback_data: 'menu_ai' },
                 { text: '🏠 主菜单', callback_data: 'menu_main' },
               ],
             ]
@@ -46,12 +78,13 @@ function setup(bot, { logger }) {
     if (text.toLowerCase() === 'clear') {
       conversationHistory.delete(userId);
       activeSessions.delete(userId); // 同时清除活跃状态
-      return ctx.reply('✅ 对话历史已清除，连续对话已关闭', {
+      return ctx.reply('🧭 <b>主菜单 / AI 助手</b>\n\n✅ 对话历史已清除，连续对话已关闭', {
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '💬 开始新对话', callback_data: 'ai_new_chat' }],
             [
-              { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+              { text: '🔙 返回上一级', callback_data: 'menu_ai' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -190,7 +223,7 @@ function setup(bot, { logger }) {
                     { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
                   ],
                   [
-                    { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+                    { text: '🔙 返回上一级', callback_data: 'menu_ai' },
                     { text: '🏠 主菜单', callback_data: 'menu_main' },
                   ],
                 ]
@@ -212,7 +245,7 @@ function setup(bot, { logger }) {
                     { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
                   ],
                   [
-                    { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+                    { text: '🔙 返回上一级', callback_data: 'menu_ai' },
                     { text: '🏠 主菜单', callback_data: 'menu_main' },
                   ],
                 ]
@@ -242,12 +275,13 @@ function setup(bot, { logger }) {
     conversationHistory.delete(userId);
     await ctx.answerCbQuery('✅ 记忆已清除');
     try {
-      await ctx.editMessageText('✅ 对话历史已清除，可以开始新对话了', {
+      await ctx.editMessageText('🧭 <b>主菜单 / AI 助手</b>\n\n✅ 对话历史已清除，可以开始新对话了', {
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '💬 发送 /chat 开始', callback_data: 'ai_noop' }],
             [
-              { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+              { text: '🔙 返回上一级', callback_data: 'menu_ai' },
               { text: '🏠 主菜单', callback_data: 'menu_main' },
             ],
           ]
@@ -259,6 +293,78 @@ function setup(bot, { logger }) {
   // 空操作
   bot.action('ai_noop', (ctx) => ctx.answerCbQuery());
   bot.action('ai_new_chat', (ctx) => ctx.answerCbQuery('💬 请发送 /chat <内容> 开始对话'));
+
+  // 重新生成上一条回复
+  bot.action(/^ai_regen_(\d+)$/, async (ctx) => {
+    try { await ctx.answerCbQuery('🔄 正在重新生成...'); } catch (e) {}
+
+    const userId = ctx.from.id.toString();
+    const settings = loadSettings();
+    const aiConfig = getActiveAiConfig(settings);
+
+    if (!aiConfig.apiKey) {
+      return;
+    }
+
+    const history = conversationHistory.get(userId) || [];
+    if (history.length === 0) {
+      return;
+    }
+
+    const baseHistory = [...history];
+    if (baseHistory[baseHistory.length - 1]?.role === 'assistant') {
+      baseHistory.pop();
+    }
+
+    const hasUserMessage = baseHistory.some((m) => m.role === 'user');
+    if (!hasUserMessage) {
+      return;
+    }
+
+    try {
+      await ctx.editMessageText('🤔 <i>正在重新生成回答...</i>', { parse_mode: 'HTML' });
+      const regenerated = await generateAssistantReply(aiConfig, baseHistory);
+
+      conversationHistory.set(userId, [...baseHistory, { role: 'assistant', content: regenerated }]);
+      activeSessions.set(userId, { lastActive: Date.now(), chatId: ctx.chat.id });
+
+      try {
+        await ctx.editMessageText(`🤖 ${regenerated}`, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '🔄 重新生成', callback_data: `ai_regen_${Date.now()}` },
+                { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+              ],
+              [
+                { text: '🔙 返回上一级', callback_data: 'menu_ai' },
+                { text: '🏠 主菜单', callback_data: 'menu_main' },
+              ],
+            ],
+          },
+        });
+      } catch (e) {
+        await ctx.editMessageText(`🤖 ${regenerated}`, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '🔄 重新生成', callback_data: `ai_regen_${Date.now()}` },
+                { text: '🧹 清除记忆', callback_data: 'ai_clear_history' },
+              ],
+              [
+                { text: '🔙 返回上一级', callback_data: 'menu_ai' },
+                { text: '🏠 主菜单', callback_data: 'menu_main' },
+              ],
+            ],
+          },
+        });
+      }
+    } catch (error) {
+      logger.error(`重新生成失败: ${error.message}`);
+      await ctx.editMessageText(`❌ 重新生成失败: ${error.message}`);
+    }
+  });
 
   // /sum 命令 - 智能摘要
   bot.command('sum', async (ctx) => {
@@ -469,7 +575,7 @@ function setup(bot, { logger }) {
                     { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
                   ],
                   [
-                    { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+                    { text: '🔙 返回上一级', callback_data: 'menu_ai' },
                     { text: '🏠 主菜单', callback_data: 'menu_main' },
                   ],
                 ]
@@ -490,7 +596,7 @@ function setup(bot, { logger }) {
                     { text: '⏹️ 结束对话', callback_data: 'ai_end_session' },
                   ],
                   [
-                    { text: '🔙 返回 AI 菜单', callback_data: 'menu_ai' },
+                    { text: '🔙 返回上一级', callback_data: 'menu_ai' },
                     { text: '🏠 主菜单', callback_data: 'menu_main' },
                   ],
                 ]

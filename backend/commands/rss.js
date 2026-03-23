@@ -11,7 +11,7 @@ function generateListButtons(feeds, page = 0, chatId) {
     return [
       [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
       [
-        { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+        { text: '🔙 返回上一级', callback_data: 'menu_rss' },
         { text: '🏠 主菜单', callback_data: 'menu_main' },
       ],
     ];
@@ -52,7 +52,7 @@ function generateListButtons(feeds, page = 0, chatId) {
   ]);
 
   buttons.push([
-    { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+    { text: '🔙 返回上一级', callback_data: 'menu_rss' },
     { text: '🏠 主菜单', callback_data: 'menu_main' },
   ]);
 
@@ -73,7 +73,7 @@ function generateDetailButtons(sub) {
     [
       { text: '🗑️ 删除订阅', callback_data: `rss_del_confirm_${sub.id}` },
     ],
-    [{ text: '🔙 返回列表', callback_data: 'rss_list_back' }],
+    [{ text: '🔙 返回上一级', callback_data: 'rss_list_back' }],
   ];
 }
 
@@ -90,6 +90,7 @@ function setup(bot, { scheduler, logger }) {
       
       if (subs.length === 0) {
         return ctx.reply(
+          '🧭 <b>主菜单 / RSS</b>\n\n' +
           '📰 <b>RSS 订阅管理</b>\n\n' +
           '📭 暂无订阅\n\n' +
           '发送 <code>/rss add URL</code> 添加第一个订阅',
@@ -99,7 +100,7 @@ function setup(bot, { scheduler, logger }) {
               inline_keyboard: [
                 [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
                 [
-                  { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+                  { text: '🔙 返回上一级', callback_data: 'menu_rss' },
                   { text: '🏠 主菜单', callback_data: 'menu_main' },
                 ],
               ]
@@ -109,7 +110,7 @@ function setup(bot, { scheduler, logger }) {
       }
       
       return ctx.reply(
-        `📰 <b>RSS 订阅管理</b>\n\n📊 共 ${subs.length} 个订阅\n\n点击订阅名查看详情，使用右侧按钮快速操作`,
+        `🧭 <b>主菜单 / RSS</b>\n\n📰 <b>RSS 订阅管理</b>\n\n📊 共 ${subs.length} 个订阅\n\n点击订阅名查看详情，使用右侧按钮快速操作`,
         { 
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: generateListButtons(subs, 0, chatId) }
@@ -170,7 +171,15 @@ function setup(bot, { scheduler, logger }) {
               loading.message_id,
               null,
               `❌ <b>解析失败</b>\n\n${result.error}\n\n请检查 URL 是否正确`,
-              { parse_mode: 'HTML' }
+              {
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: [[
+                    { text: '🔙 返回上一级', callback_data: 'menu_rss' },
+                    { text: '🏠 主菜单', callback_data: 'menu_main' },
+                  ]],
+                },
+              }
             );
           }
         } catch (e) {
@@ -178,7 +187,15 @@ function setup(bot, { scheduler, logger }) {
             ctx.chat.id,
             loading.message_id,
             null,
-            `❌ 解析出错: ${e.message}`
+            `❌ 解析出错: ${e.message}`,
+            {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🔙 返回上一级', callback_data: 'menu_rss' },
+                  { text: '🏠 主菜单', callback_data: 'menu_main' },
+                ]],
+              },
+            }
           );
         }
         break;
@@ -195,7 +212,7 @@ function setup(bot, { scheduler, logger }) {
         }
         
         ctx.reply(
-          `📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
+          `🧭 <b>主菜单 / RSS / 列表</b>\n\n📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
           { 
             parse_mode: 'HTML',
             reply_markup: { inline_keyboard: generateListButtons(feeds, 0, chatId) }
@@ -331,7 +348,7 @@ function setup(bot, { scheduler, logger }) {
     const feeds = scheduler.getSubscriptions().filter(s => s.chatId === chatId || s.userId === userId);
     
     await ctx.editMessageText(
-      `📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
+      `🧭 <b>主菜单 / RSS / 列表</b>\n\n📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
       { 
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateListButtons(feeds, page, chatId) }
@@ -347,7 +364,7 @@ function setup(bot, { scheduler, logger }) {
     const feeds = scheduler.getSubscriptions().filter(s => s.chatId === chatId || s.userId === userId);
     
     await ctx.editMessageText(
-      `📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
+      `🧭 <b>主菜单 / RSS / 列表</b>\n\n📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
       { 
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: generateListButtons(feeds, 0, chatId) }
@@ -366,6 +383,7 @@ function setup(bot, { scheduler, logger }) {
     const keywords = sub.keywords || { whitelist: [], blacklist: [] };
     
     await ctx.editMessageText(
+      `🧭 <b>主菜单 / RSS / 订阅详情</b>\n\n` +
       `📰 <b>订阅详情</b>\n\n` +
       `📌 ${sub.title || '未知'}\n` +
       `🔗 <code>${sub.url}</code>\n` +
@@ -399,7 +417,7 @@ function setup(bot, { scheduler, logger }) {
     
     try {
       await ctx.editMessageText(
-        `📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
+        `🧭 <b>主菜单 / RSS / 列表</b>\n\n📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
         { 
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: generateListButtons(feeds, 0, chatId) }
@@ -469,7 +487,7 @@ function setup(bot, { scheduler, logger }) {
             inline_keyboard: [
               [{ text: '➕ 添加订阅', callback_data: 'rss_add_prompt' }],
               [
-                { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+                { text: '🔙 返回上一级', callback_data: 'menu_rss' },
                 { text: '🏠 主菜单', callback_data: 'menu_main' },
               ],
             ]
@@ -477,7 +495,7 @@ function setup(bot, { scheduler, logger }) {
         });
       } else {
         await ctx.editMessageText(
-          `📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
+          `🧭 <b>主菜单 / RSS / 列表</b>\n\n📰 <b>RSS 订阅列表</b>\n\n📊 共 ${feeds.length} 个订阅`,
           { 
             parse_mode: 'HTML',
             reply_markup: { inline_keyboard: generateListButtons(feeds, 0, chatId) }
@@ -493,12 +511,12 @@ function setup(bot, { scheduler, logger }) {
   bot.action('rss_add_prompt', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) {}
     await ctx.editMessageText(
-      '➕ <b>添加 RSS 订阅</b>\n\n发送命令添加订阅：\n<code>/rss add https://example.com/feed.xml</code>',
+      '🧭 <b>主菜单 / RSS / 添加订阅</b>\n\n➕ <b>添加 RSS 订阅</b>\n\n发送命令添加订阅：\n<code>/rss add https://example.com/feed.xml</code>',
       {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '🔙 返回 RSS 菜单', callback_data: 'menu_rss' },
+            { text: '🔙 返回上一级', callback_data: 'menu_rss' },
             { text: '🏠 主菜单', callback_data: 'menu_main' },
           ]],
         },
@@ -519,7 +537,7 @@ function setup(bot, { scheduler, logger }) {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '🔙 返回', callback_data: `rss_detail_${id}` },
+            { text: '🔙 返回上一级', callback_data: `rss_detail_${id}` },
             { text: '🏠 主菜单', callback_data: 'menu_main' },
           ]]
         }
@@ -547,7 +565,7 @@ function setup(bot, { scheduler, logger }) {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '🔙 返回', callback_data: `rss_detail_${id}` },
+            { text: '🔙 返回上一级', callback_data: `rss_detail_${id}` },
             { text: '🏠 主菜单', callback_data: 'menu_main' },
           ]]
         }
