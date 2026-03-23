@@ -524,6 +524,7 @@ function setup(bot, { logger, settings }) {
     });
 
     buttons.push([{ text: '➕ 创建新贴纸包', callback_data: 'newpack_start' }]);
+    buttons.push([{ text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' }]);
 
     ctx.reply(
       `📦 <b>我的贴纸包</b>\n\n` +
@@ -548,7 +549,12 @@ function setup(bot, { logger, settings }) {
       return ctx.editMessageText(
         '📭 <b>你还没有贴纸包</b>\n\n' +
         '使用 <code>/newpack 名称</code> 创建一个',
-        { parse_mode: 'HTML' }
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{ text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' }]],
+          },
+        }
       );
     }
 
@@ -559,6 +565,8 @@ function setup(bot, { logger, settings }) {
         url: `https://t.me/addstickers/${pack.name}`,
       }];
     });
+
+    buttons.push([{ text: '🔙 返回贴纸菜单', callback_data: 'menu_stickers' }]);
 
     await ctx.editMessageText(
       `📦 <b>我的贴纸包</b>\n\n共 ${packs.length} 个\n🖼️ 静态  ✨ 动态  🎬 视频`,
