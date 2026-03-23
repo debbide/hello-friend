@@ -476,6 +476,16 @@ class GitHubMonitor {
    * 格式化通知消息
    */
   formatMessage(data) {
+    const divider = '────────────────────';
+    const nowText = new Date().toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).replace(/\//g, '-');
+
     if (data.type === 'release') {
       const { repo, release } = data;
       const body = release.body
@@ -483,57 +493,51 @@ class GitHubMonitor {
         : '无更新说明';
 
       return [
-        `🚀 <b>新版本发布</b>`,
-        ``,
+        `🚀 <b>GitHub New Release</b>`,
+        divider,
         `📦 <b>${repo}</b>`,
-        `🏷️ ${release.tag}`,
-        release.name !== release.tag ? `📝 ${release.name}` : '',
+        `🏷️ <code>${release.tag}</code>${release.name !== release.tag ? ` (${release.name})` : ''}`,
+        `📅 ${new Date(release.publishedAt).toLocaleString('zh-CN').replace(/\//g, '-')}`,
         ``,
-        `<b>更新内容：</b>`,
-        `<code>${this.escapeHtml(body)}</code>`,
+        `📝 <b>Release Notes:</b>`,
+        `<blockquote>${this.escapeHtml(body)}</blockquote>`,
         ``,
-        `🔗 <a href="${release.url}">查看详情</a>`,
-      ].filter(Boolean).join('\n');
+        divider,
+        `🔗 <a href="${release.url}">View Release</a> | 📂 <a href="https://github.com/${repo}">Repository</a>`,
+      ].filter(l => l !== undefined).join('\n');
     }
 
     if (data.type === 'star_milestone') {
       return [
-        `🌟 <b>Star 里程碑</b>`,
-        ``,
+        `🏆 <b>GitHub Star Milestone</b>`,
+        divider,
         `📦 <b>${data.repo}</b>`,
-        `⭐ 突破 <b>${data.milestone}</b> Star！`,
-        `📊 当前 Star 数: ${data.currentStars}`,
+        `⭐ Congratulations! Reached <b>${data.milestone.toLocaleString()}</b> Stars!`,
+        `📊 Total Stargazers: ${data.currentStars.toLocaleString()}`,
         ``,
-        `🔗 <a href="${data.url}">查看仓库</a>`,
+        divider,
+        `🔗 <a href="${data.url}">View Repository</a>`,
       ].join('\n');
     }
 
     if (data.type === 'owner_repo_update') {
-      const repoLines = (data.repos || []).slice(0, 6).map((repo, idx) => {
-        return `${idx + 1}. <a href="${repo.htmlUrl}">${repo.fullName}</a>`;
+      const repoLines = (data.repos || []).slice(0, 8).map((repo) => {
+        return `🔹 <a href="${repo.htmlUrl}">${repo.fullName}</a>`;
       });
 
-      const extraLine = data.updatedCount > 6 ? `... 另外 ${data.updatedCount - 6} 个仓库更新` : '';
-      const nowText = new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).replace(/\//g, '-');
+      const extraLine = data.updatedCount > 8 ? `\n... 另外 ${data.updatedCount - 8} 个仓库更新` : '';
 
       return [
-        `<b>GitHub 账号更新</b>`,
+        `🔔 <b>GitHub Account Update</b>`,
+        divider,
+        `👤 <b>${data.owner}</b> (GitHub 账号)`,
+        `🔄 有 <b>${data.updatedCount}</b> 个仓库发生了更新：`,
         ``,
-        `账号：<b>${data.owner}</b>`,
-        `更新：<b>${data.updatedCount}</b> 个仓库`,
+        repoLines.join('\n'),
+        extraLine,
         ``,
-        repoLines.join('\n\n'),
-        extraLine ? `\n${extraLine}` : '',
-        ``,
-        `<a href="${data.profileUrl}">GitHub 主页</a>`,
-        `时间：${nowText}`,
+        divider,
+        `📅 ${nowText} | 👤 <a href="${data.profileUrl}">查看主页</a>`,
       ].filter(Boolean).join('\n');
     }
 
