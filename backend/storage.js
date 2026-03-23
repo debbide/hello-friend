@@ -362,6 +362,57 @@ function addGithubNotification(repoFullName, type, data) {
     return notification;
 }
 
+function getGithubOwners() {
+    return loadData('github-owners.json', []);
+}
+
+function saveGithubOwners(owners) {
+    saveData('github-owners.json', owners);
+}
+
+function addGithubOwner(owner, ownerType = 'user') {
+    const owners = getGithubOwners();
+    const normalizedOwner = String(owner || '').trim();
+
+    if (!normalizedOwner) {
+        return { success: false, error: '账号不能为空' };
+    }
+
+    if (owners.some(o => o.owner.toLowerCase() === normalizedOwner.toLowerCase())) {
+        return { success: false, error: '该账号已在监控中' };
+    }
+
+    const ownerData = {
+        id: `gha_${Date.now()}`,
+        owner: normalizedOwner,
+        ownerType,
+        repoSnapshots: [],
+        lastCheck: null,
+        createdAt: new Date().toISOString(),
+    };
+
+    owners.push(ownerData);
+    saveGithubOwners(owners);
+    return { success: true, data: ownerData };
+}
+
+function updateGithubOwner(id, updates) {
+    const owners = getGithubOwners();
+    const index = owners.findIndex(o => o.id === id);
+    if (index === -1) return null;
+    owners[index] = { ...owners[index], ...updates };
+    saveGithubOwners(owners);
+    return owners[index];
+}
+
+function deleteGithubOwner(id) {
+    const owners = getGithubOwners();
+    const filtered = owners.filter(o => o.id !== id);
+    if (filtered.length === owners.length) return false;
+    saveGithubOwners(filtered);
+    return true;
+}
+
 // ==================== 贴纸收藏存储 ====================
 
 function getStickers(userId = null) {
@@ -559,6 +610,10 @@ module.exports = {
     deleteGithubRepoByName,
     getGithubNotifications,
     addGithubNotification,
+    getGithubOwners,
+    addGithubOwner,
+    updateGithubOwner,
+    deleteGithubOwner,
     // 贴纸收藏
     getStickers,
     addSticker,

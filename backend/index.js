@@ -1285,8 +1285,97 @@ app.post('/api/github/refresh-all', async (req, res) => {
   }
 
   try {
-    await monitor.checkAllRepos();
+    await monitor.checkAll();
     res.json({ success: true, message: '刷新完成' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 获取所有监控账号
+app.get('/api/github/accounts', (req, res) => {
+  const accounts = storage.getGithubOwners();
+  res.json({ success: true, data: accounts });
+});
+
+// 添加账号监控
+app.post('/api/github/accounts', async (req, res) => {
+  const owner = String(req.body?.owner || '').trim();
+  const ownerTypeInput = String(req.body?.ownerType || 'auto').toLowerCase();
+
+  if (!owner) {
+    return res.status(400).json({ success: false, error: '请提供 GitHub 账号' });
+  }
+
+  try {
+    const response = await fetch(`https://api.github.com/users/${owner}`, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TG-Bot-GitHub-Monitor',
+      },
+    });
+
+    if (response.status === 404) {
+      return res.status(404).json({ success: false, error: 'GitHub 账号不存在' });
+    }
+
+    if (!response.ok) {
+      return res.status(500).json({ success: false, error: `GitHub API 错误: ${response.status}` });
+    }
+
+    const profile = await response.json();
+    const detectedType = profile.type === 'Organization' ? 'org' : 'user';
+    const ownerType = ownerTypeInput === 'auto' ? detectedType : ownerTypeInput;
+
+    if (!['user', 'org'].includes(ownerType)) {
+      return res.status(400).json({ success: false, error: '账号类型仅支持 user 或 org' });
+    }
+
+    const result = storage.addGithubOwner(owner, ownerType);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    storage.addLog('info', `GitHub 添加账号监控: ${owner} (${ownerType})`, 'github');
+    res.json({
+      success: true,
+      data: {
+        ...result.data,
+        profile: {
+          login: profile.login,
+          type: profile.type,
+          publicRepos: profile.public_repos,
+          url: profile.html_url,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 删除账号监控
+app.delete('/api/github/accounts/:id', (req, res) => {
+  const deleted = storage.deleteGithubOwner(req.params.id);
+
+  if (deleted) {
+    storage.addLog('info', `GitHub 取消账号监控: ${req.params.id}`, 'github');
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ success: false, error: '账号监控不存在' });
+  }
+});
+
+// 手动刷新单个账号
+app.post('/api/github/accounts/:id/refresh', async (req, res) => {
+  const monitor = initGithubMonitor();
+  if (!monitor) {
+    return res.status(503).json({ success: false, error: 'Bot 未启动' });
+  }
+
+  try {
+    const account = await monitor.refreshOwner(req.params.id);
+    res.json({ success: true, data: account });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

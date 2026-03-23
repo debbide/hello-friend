@@ -25,13 +25,18 @@ class GitHubMonitor {
 
     // 延迟 30 秒后首次检查（避免启动时压力过大）
     setTimeout(() => {
-      this.checkAllRepos();
+      this.checkAll();
     }, 30000);
 
     // 定时检查
     this.timer = setInterval(() => {
-      this.checkAllRepos();
+      this.checkAll();
     }, this.checkInterval);
+  }
+
+  async checkAll() {
+    await this.checkAllRepos();
+    await this.checkAllOwners();
   }
 
   /**
@@ -65,6 +70,26 @@ class GitHubMonitor {
       } catch (error) {
         this.logger.error(`检查 ${repo.fullName} 失败: ${error.message}`);
         storage.addLog('error', `GitHub 检查失败: ${repo.fullName} - ${error.message}`, 'github');
+      }
+    }
+  }
+
+  async checkAllOwners() {
+    const owners = storage.getGithubOwners();
+
+    if (owners.length === 0) {
+      return;
+    }
+
+    this.logger.info(`🔄 检查 ${owners.length} 个 GitHub 账号...`);
+
+    for (const ownerMonitor of owners) {
+      try {
+        await this.checkOwner(ownerMonitor);
+        await this.sleep(2000);
+      } catch (error) {
+        this.logger.error(`检查账号 ${ownerMonitor.owner} 失败: ${error.message}`);
+        storage.addLog('error', `GitHub 账号检查失败: ${ownerMonitor.owner} - ${error.message}`, 'github');
       }
     }
   }
@@ -247,6 +272,110 @@ class GitHubMonitor {
     return await response.json();
   }
 
+  async fetchOwnerRepos(owner, ownerType = 'user') {
+    const repos = [];
+    const endpointPrefix = ownerType === 'org' ? 'orgs' : 'users';
+
+    for (let page = 1; page <= 3; page++) {
+      const url = `https://api.github.com/${endpointPrefix}/${owner}/repos?type=public&sort=pushed&direction=desc&per_page=100&page=${page}`;
+      const response = await this.fetchWithHeaders(url);
+
+      if (response.status === 404) {
+        throw new Error('GitHub 账号不存在');
+      }
+
+      if (!response.ok) {
+        throw new Error(`GitHub API 错误: ${response.status}`);
+      }
+
+      const pageRepos = await response.json();
+      repos.push(...pageRepos);
+
+      if (pageRepos.length < 100) {
+        break;
+      }
+    }
+
+    return repos;
+  }
+
+  async checkOwner(ownerMonitor) {
+    const { id, owner, ownerType = 'user', repoSnapshots = [] } = ownerMonitor;
+    const repos = await this.fetchOwnerRepos(owner, ownerType);
+
+    const latestSnapshots = repos.map((repo) => ({
+      fullName: repo.full_name,
+      pushedAt: repo.pushed_at,
+      htmlUrl: repo.html_url,
+    }));
+
+    const currentSnapshotMap = new Map(latestSnapshots.map((r) => [r.fullName, r]));
+    const previousSnapshotMap = new Map((repoSnapshots || []).map((r) => [r.fullName, r]));
+
+    const now = new Date().toISOString();
+
+    // 首次记录快照，不推送
+    if (!repoSnapshots || repoSnapshots.length === 0) {
+      storage.updateGithubOwner(id, {
+        repoSnapshots: latestSnapshots,
+        lastCheck: now,
+      });
+      this.logger.info(`  📌 ${owner}: 首次记录 ${latestSnapshots.length} 个仓库快照`);
+      return;
+    }
+
+    const updatedRepos = [];
+    for (const [fullName, current] of currentSnapshotMap.entries()) {
+      const previous = previousSnapshotMap.get(fullName);
+      if (!previous) {
+        updatedRepos.push(current);
+        continue;
+      }
+      if (current.pushedAt && previous.pushedAt && new Date(current.pushedAt).getTime() > new Date(previous.pushedAt).getTime()) {
+        updatedRepos.push(current);
+      }
+    }
+
+    storage.updateGithubOwner(id, {
+      repoSnapshots: latestSnapshots,
+      lastCheck: now,
+    });
+
+    if (updatedRepos.length === 0) {
+      return;
+    }
+
+    const previewRepos = updatedRepos.slice(0, 8).map((r) => ({
+      fullName: r.fullName,
+      pushedAt: r.pushedAt,
+      htmlUrl: r.htmlUrl,
+    }));
+
+    this.logger.info(`  🔔 ${owner}: 发现 ${updatedRepos.length} 个仓库更新`);
+
+    storage.addGithubNotification(owner, 'owner_repo_update', {
+      owner,
+      ownerType,
+      updatedCount: updatedRepos.length,
+      repos: previewRepos,
+      profileUrl: `https://github.com/${owner}`,
+      url: `https://github.com/${owner}`,
+    });
+
+    if (this.onUpdate) {
+      await this.onUpdate({
+        type: 'owner_repo_update',
+        owner,
+        ownerType,
+        updatedCount: updatedRepos.length,
+        repos: previewRepos,
+        profileUrl: `https://github.com/${owner}`,
+      });
+    }
+
+    storage.addLog('info', `GitHub 账号更新: ${owner} (${updatedRepos.length} 个仓库)`, 'github');
+  }
+
   /**
    * 带认证头的请求
    */
@@ -278,6 +407,18 @@ class GitHubMonitor {
 
     await this.checkRepo(repo);
     return repo;
+  }
+
+  async refreshOwner(ownerId) {
+    const owners = storage.getGithubOwners();
+    const owner = owners.find(o => o.id === ownerId);
+
+    if (!owner) {
+      throw new Error('账号不存在');
+    }
+
+    await this.checkOwner(owner);
+    return storage.getGithubOwners().find(o => o.id === ownerId) || owner;
   }
 
   /**
@@ -333,6 +474,30 @@ class GitHubMonitor {
         ``,
         `🔗 <a href="${data.url}">查看仓库</a>`,
       ].join('\n');
+    }
+
+    if (data.type === 'owner_repo_update') {
+      const repoLines = (data.repos || []).slice(0, 6).map((repo, idx) => {
+        const updatedAt = repo.pushedAt ? new Date(repo.pushedAt).toLocaleString('zh-CN') : '未知时间';
+        return `${idx + 1}. <a href="${repo.htmlUrl}">${repo.fullName}</a>\n   🕒 ${updatedAt}`;
+      });
+
+      const extraLine = data.updatedCount > 6
+        ? `\n... 以及另外 ${data.updatedCount - 6} 个仓库更新`
+        : '';
+
+      return [
+        `📡 <b>账号仓库有更新</b>`,
+        ``,
+        `👤 <b>${data.owner}</b>`,
+        `📦 本轮更新: <b>${data.updatedCount}</b> 个仓库`,
+        ``,
+        `<b>更新仓库：</b>`,
+        repoLines.join('\n'),
+        extraLine,
+        ``,
+        `🔗 <a href="${data.profileUrl}">查看账号主页</a>`,
+      ].filter(Boolean).join('\n');
     }
 
     return '';

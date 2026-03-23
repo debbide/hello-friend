@@ -719,7 +719,7 @@ export interface GitHubRepo {
 export interface GitHubNotification {
   id: string;
   repoFullName: string;
-  type: 'release' | 'star_milestone';
+  type: 'release' | 'star_milestone' | 'owner_repo_update';
   data: {
     tag?: string;
     name?: string;
@@ -728,7 +728,29 @@ export interface GitHubNotification {
     publishedAt?: string;
     milestone?: number;
     currentStars?: number;
+    owner?: string;
+    ownerType?: 'user' | 'org';
+    updatedCount?: number;
+    repos?: Array<{
+      fullName: string;
+      pushedAt: string;
+      htmlUrl: string;
+    }>;
+    profileUrl?: string;
   };
+  createdAt: string;
+}
+
+export interface GitHubOwnerMonitor {
+  id: string;
+  owner: string;
+  ownerType: 'user' | 'org';
+  repoSnapshots: Array<{
+    fullName: string;
+    pushedAt: string;
+    htmlUrl: string;
+  }>;
+  lastCheck: string | null;
   createdAt: string;
 }
 
@@ -797,6 +819,25 @@ export const githubApi = {
 
   async search(owner: string, repo: string): Promise<ApiResponse<GitHubRepoInfo>> {
     return request<GitHubRepoInfo>(`/api/github/search?repo=${owner}/${repo}`);
+  },
+
+  async listOwners(): Promise<ApiResponse<GitHubOwnerMonitor[]>> {
+    return request<GitHubOwnerMonitor[]>('/api/github/accounts');
+  },
+
+  async createOwner(owner: string, ownerType: 'auto' | 'user' | 'org' = 'auto'): Promise<ApiResponse<GitHubOwnerMonitor>> {
+    return request('/api/github/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ owner, ownerType }),
+    });
+  },
+
+  async deleteOwner(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(`/api/github/accounts/${id}`, { method: 'DELETE' });
+  },
+
+  async refreshOwner(id: string): Promise<ApiResponse<GitHubOwnerMonitor>> {
+    return request(`/api/github/accounts/${id}/refresh`, { method: 'POST' });
   },
 };
 

@@ -16,8 +16,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { githubApi, GitHubRepo, GitHubNotification, GitHubRepoInfo } from "@/lib/api/backend";
-import { Github, Plus, Trash2, RefreshCw, Star, Tag, ExternalLink, Clock, Loader2, Search, Eye } from "lucide-react";
+import { githubApi, GitHubRepo, GitHubNotification, GitHubRepoInfo, GitHubOwnerMonitor } from "@/lib/api/backend";
+import { Github, Plus, Trash2, RefreshCw, Star, Tag, ExternalLink, Clock, Loader2, Search, Eye, Users, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 
 const GitHubSkeleton = () => (
@@ -48,16 +48,22 @@ const GitHubSkeleton = () => (
 
 const GitHubMonitorPage = () => {
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [owners, setOwners] = useState<GitHubOwnerMonitor[]>([]);
   const [notifications, setNotifications] = useState<GitHubNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [isAddOwnerOpen, setIsAddOwnerOpen] = useState(false);
+  const [isAddingOwner, setIsAddingOwner] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshingOwnerId, setRefreshingOwnerId] = useState<string | null>(null);
 
   const [repoInput, setRepoInput] = useState("");
   const [searchResult, setSearchResult] = useState<GitHubRepoInfo | null>(null);
   const [watchTypes, setWatchTypes] = useState<string[]>(["release"]);
+  const [ownerInput, setOwnerInput] = useState("");
+  const [ownerType, setOwnerType] = useState<"auto" | "user" | "org">("auto");
 
   useEffect(() => {
     loadData();
@@ -65,12 +71,16 @@ const GitHubMonitorPage = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [reposResult, notificationsResult] = await Promise.all([
+    const [reposResult, ownersResult, notificationsResult] = await Promise.all([
       githubApi.list(),
+      githubApi.listOwners(),
       githubApi.getNotifications(),
     ]);
     if (reposResult.success && reposResult.data) {
       setRepos(reposResult.data);
+    }
+    if (ownersResult.success && ownersResult.data) {
+      setOwners(ownersResult.data);
     }
     if (notificationsResult.success && notificationsResult.data) {
       setNotifications(notificationsResult.data);
@@ -148,6 +158,50 @@ const GitHubMonitorPage = () => {
     }
   };
 
+  const handleAddOwner = async () => {
+    const owner = ownerInput.trim();
+    if (!owner) {
+      toast.error("请输入 GitHub 账号");
+      return;
+    }
+
+    setIsAddingOwner(true);
+    const result = await githubApi.createOwner(owner, ownerType);
+    setIsAddingOwner(false);
+
+    if (result.success) {
+      toast.success("已添加账号监控");
+      setIsAddOwnerOpen(false);
+      setOwnerInput("");
+      setOwnerType("auto");
+      await loadData();
+    } else {
+      toast.error(result.error || "添加失败");
+    }
+  };
+
+  const handleDeleteOwner = async (id: string) => {
+    const result = await githubApi.deleteOwner(id);
+    if (result.success) {
+      setOwners(owners.filter((o) => o.id !== id));
+      toast.success("已取消账号监控");
+    } else {
+      toast.error(result.error || "删除失败");
+    }
+  };
+
+  const handleRefreshOwner = async (id: string) => {
+    setRefreshingOwnerId(id);
+    const result = await githubApi.refreshOwner(id);
+    setRefreshingOwnerId(null);
+    if (result.success) {
+      await loadData();
+      toast.success("账号已刷新");
+    } else {
+      toast.error(result.error || "刷新失败");
+    }
+  };
+
   const handleRefreshAll = async () => {
     const result = await githubApi.refreshAll();
     if (result.success) {
@@ -177,7 +231,7 @@ const GitHubMonitorPage = () => {
             <Github className="w-7 h-7" /> GitHub 监控
           </h1>
           <p className="text-muted-foreground mt-1">
-            监控 GitHub 仓库的新版本发布和 Star 里程碑
+            监控仓库发布/Star 里程碑，以及账号下仓库更新
           </p>
         </div>
         <div className="flex gap-2">
@@ -279,6 +333,53 @@ const GitHubMonitorPage = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog open={isAddOwnerOpen} onOpenChange={setIsAddOwnerOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Users className="w-4 h-4" />
+                添加账号
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>添加 GitHub 账号监控</DialogTitle>
+                <DialogDescription>
+                  当该账号下任意仓库有代码更新时推送提醒
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>账号</Label>
+                  <Input
+                    value={ownerInput}
+                    onChange={(e) => setOwnerInput(e.target.value)}
+                    placeholder="例如: microsoft"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>账号类型</Label>
+                  <select
+                    value={ownerType}
+                    onChange={(e) => setOwnerType(e.target.value as "auto" | "user" | "org")}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="auto">自动识别</option>
+                    <option value="user">用户</option>
+                    <option value="org">组织</option>
+                  </select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddOwnerOpen(false)}>
+                  取消
+                </Button>
+                <Button onClick={handleAddOwner} disabled={isAddingOwner || !ownerInput.trim()}>
+                  {isAddingOwner ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  添加账号监控
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -296,6 +397,55 @@ const GitHubMonitorPage = () => {
 
         {/* Repos Tab */}
         <TabsContent value="repos" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-4 h-4" /> 账号监控 ({owners.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {owners.length === 0 ? (
+                <p className="text-sm text-muted-foreground">暂无账号监控，点击右上角「添加账号」即可启用。</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {owners.map((owner) => (
+                    <div key={owner.id} className="rounded-lg border p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          {owner.owner}
+                          <Badge variant="outline" className="text-xs">{owner.ownerType}</Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          上次检查：{owner.lastCheck ? new Date(owner.lastCheck).toLocaleString("zh-CN") : "从未"}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRefreshOwner(owner.id)}
+                          disabled={refreshingOwnerId === owner.id}
+                        >
+                          {refreshingOwnerId === owner.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteOwner(owner.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="mt-6">
           {repos.length === 0 ? (
             <Card className="py-12">
               <CardContent className="text-center text-muted-foreground">
@@ -383,6 +533,7 @@ const GitHubMonitorPage = () => {
               ))}
             </div>
           )}
+          </div>
         </TabsContent>
 
         {/* History Tab */}
@@ -404,20 +555,28 @@ const GitHubMonitorPage = () => {
                         className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                           notification.type === "release"
                             ? "bg-green-500/10"
-                            : "bg-yellow-500/10"
+                            : notification.type === "star_milestone"
+                            ? "bg-yellow-500/10"
+                            : "bg-blue-500/10"
                         }`}
                       >
                         {notification.type === "release" ? (
                           <Tag className="w-5 h-5 text-green-500" />
-                        ) : (
+                        ) : notification.type === "star_milestone" ? (
                           <Star className="w-5 h-5 text-yellow-500" />
+                        ) : (
+                          <GitBranch className="w-5 h-5 text-blue-500" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">{notification.repoFullName}</span>
                           <Badge variant="outline" className="text-xs">
-                            {notification.type === "release" ? "新版本" : "Star 里程碑"}
+                            {notification.type === "release"
+                              ? "新版本"
+                              : notification.type === "star_milestone"
+                              ? "Star 里程碑"
+                              : "账号仓库更新"}
                           </Badge>
                         </div>
                         {notification.type === "release" && notification.data.tag && (
@@ -444,6 +603,13 @@ const GitHubMonitorPage = () => {
                             <span className="font-semibold">
                               {notification.data.currentStars?.toLocaleString()}
                             </span>
+                          </p>
+                        )}
+                        {notification.type === "owner_repo_update" && (
+                          <p className="text-sm mt-1">
+                            账号 <span className="font-semibold">{notification.data.owner}</span> 有
+                            <span className="font-semibold text-blue-600"> {notification.data.updatedCount} </span>
+                            个仓库更新
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground mt-2">

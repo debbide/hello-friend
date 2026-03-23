@@ -12,6 +12,9 @@ function setup(bot, { logger }) {
       `<code>/ghwatch owner/repo</code> - 监控仓库（默认监控 Release）\n` +
       `<code>/ghwatch owner/repo release,star</code> - 指定监控类型\n` +
       `<code>/ghunwatch owner/repo</code> - 取消监控\n` +
+      `<code>/ghwatchowner owner</code> - 监控账号下仓库更新\n` +
+      `<code>/ghunwatchowner owner</code> - 取消账号监控\n` +
+      `<code>/ghowners</code> - 查看账号监控列表\n` +
       `<code>/ghlist</code> - 查看监控列表\n` +
       `<code>/ghcheck owner/repo</code> - 查看仓库信息\n\n` +
       `<b>监控类型：</b>\n` +
@@ -140,11 +143,12 @@ function setup(bot, { logger }) {
   // 查看监控列表
   bot.command('ghlist', (ctx) => {
     const repos = storage.getGithubRepos();
+    const owners = storage.getGithubOwners();
 
-    if (repos.length === 0) {
+    if (repos.length === 0 && owners.length === 0) {
       return ctx.reply(
-        '📋 当前没有监控任何 GitHub 仓库\n\n' +
-        '使用 <code>/ghwatch owner/repo</code> 来添加监控',
+        '📋 当前没有监控任何 GitHub 目标\n\n' +
+        '使用 <code>/ghwatch owner/repo</code> 或 <code>/ghwatchowner owner</code> 来添加监控',
         { parse_mode: 'HTML' }
       );
     }
@@ -157,10 +161,115 @@ function setup(bot, { logger }) {
       return `${i + 1}. <b>${r.fullName}</b>\n   📌 ${lastVersion} | ⏱ ${lastCheck}\n   👁️ ${r.watchTypes.join(', ')}`;
     }).join('\n\n');
 
-    ctx.reply(
-      `📋 <b>监控中的 GitHub 仓库（${repos.length}个）：</b>\n\n${list}`,
-      { parse_mode: 'HTML' }
-    );
+    const ownerList = owners.map((o, i) => {
+      const lastCheck = o.lastCheck
+        ? new Date(o.lastCheck).toLocaleString('zh-CN')
+        : '从未';
+      return `${i + 1}. <b>${o.owner}</b> (${o.ownerType})\n   ⏱ ${lastCheck}`;
+    }).join('\n\n');
+
+    const message = [
+      repos.length > 0
+        ? `📦 <b>仓库监控（${repos.length}个）</b>\n\n${list}`
+        : '',
+      owners.length > 0
+        ? `👤 <b>账号监控（${owners.length}个）</b>\n\n${ownerList}`
+        : '',
+    ].filter(Boolean).join('\n\n');
+
+    ctx.reply(`📋 <b>GitHub 监控列表</b>\n\n${message}`, { parse_mode: 'HTML' });
+  });
+
+  bot.command('ghwatchowner', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
+    const owner = String(args[0] || '').trim();
+
+    if (!owner) {
+      return ctx.reply(
+        '❌ 请提供账号\n\n用法：<code>/ghwatchowner owner</code>\n示例：<code>/ghwatchowner microsoft</code>',
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    try {
+      const response = await fetch(`https://api.github.com/users/${owner}`, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'TG-Bot-GitHub-Monitor',
+        },
+      });
+
+      if (response.status === 404) {
+        return ctx.reply(`❌ 账号 <code>${owner}</code> 不存在`, { parse_mode: 'HTML' });
+      }
+      if (!response.ok) {
+        return ctx.reply(`❌ 请求失败: ${response.status}`);
+      }
+
+      const profile = await response.json();
+      const ownerType = profile.type === 'Organization' ? 'org' : 'user';
+      const result = storage.addGithubOwner(owner, ownerType);
+
+      if (!result.success) {
+        return ctx.reply(`❌ ${result.error}`);
+      }
+
+      storage.addLog('info', `GitHub 添加账号监控: ${owner} (${ownerType})`, 'github');
+      ctx.reply(
+        `✅ 已添加账号监控\n\n` +
+        `👤 <b>${profile.login}</b> (${ownerType})\n` +
+        `📦 公开仓库: ${profile.public_repos}\n` +
+        `🔗 <a href="${profile.html_url}">查看主页</a>\n\n` +
+        `系统会在账号下任意仓库有代码更新时推送提醒`,
+        { parse_mode: 'HTML', disable_web_page_preview: true }
+      );
+    } catch (error) {
+      logger.error(`添加 GitHub 账号监控失败: ${error.message}`);
+      ctx.reply(`❌ 添加失败: ${error.message}`);
+    }
+  });
+
+  bot.command('ghunwatchowner', (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
+    const owner = String(args[0] || '').trim();
+
+    if (!owner) {
+      return ctx.reply('❌ 用法：<code>/ghunwatchowner owner</code>', { parse_mode: 'HTML' });
+    }
+
+    const owners = storage.getGithubOwners();
+    const target = owners.find(o => o.owner.toLowerCase() === owner.toLowerCase());
+    if (!target) {
+      return ctx.reply('❌ 未找到该账号的监控记录');
+    }
+
+    const deleted = storage.deleteGithubOwner(target.id);
+    if (deleted) {
+      storage.addLog('info', `GitHub 取消账号监控: ${owner}`, 'github');
+      ctx.reply(`✅ 已取消账号监控 <code>${owner}</code>`, { parse_mode: 'HTML' });
+    } else {
+      ctx.reply('❌ 删除失败');
+    }
+  });
+
+  bot.command('ghowners', (ctx) => {
+    const owners = storage.getGithubOwners();
+
+    if (owners.length === 0) {
+      return ctx.reply(
+        '📋 当前没有监控任何 GitHub 账号\n\n使用 <code>/ghwatchowner owner</code> 来添加监控',
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    const list = owners.map((o, i) => {
+      const lastCheck = o.lastCheck
+        ? new Date(o.lastCheck).toLocaleString('zh-CN')
+        : '从未';
+      return `${i + 1}. <b>${o.owner}</b> (${o.ownerType})\n   ⏱ ${lastCheck}`;
+    }).join('\n\n');
+
+    ctx.reply(`👤 <b>监控中的 GitHub 账号（${owners.length}个）</b>\n\n${list}`, { parse_mode: 'HTML' });
   });
 
   // 查看仓库信息

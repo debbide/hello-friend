@@ -24,6 +24,7 @@ function setup(bot, { logger }) {
     { command: 'id', description: '🆔 获取 ID' },
     { command: 'ghhelp', description: '🐙 GitHub 监控帮助' },
     { command: 'ghwatch', description: '👁️ 监控 GitHub 仓库' },
+    { command: 'ghwatchowner', description: '👤 监控 GitHub 账号更新' },
     { command: 'ghlist', description: '📋 查看监控列表' },
   ];
 
