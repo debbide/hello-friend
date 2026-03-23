@@ -30,6 +30,10 @@ FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
 
 WORKDIR /app
 
+# 避免在构建阶段下载 Puppeteer 自带浏览器（最终镜像使用系统 chromium）
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 # 复制后端依赖文件
 COPY backend/package*.json ./
 
@@ -52,6 +56,7 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
