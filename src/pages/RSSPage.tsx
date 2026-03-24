@@ -169,6 +169,32 @@ const RSSPage = () => {
     messageTemplate: "📰 <b>{feed_title}</b>\n{title}\n{link}",
   });
 
+  const testBotConfig = async (botToken?: string, chatId?: string) => {
+    try {
+      const token = localStorage.getItem("bot_admin_token");
+      const response = await fetch(`${BACKEND_URL}/api/bot/test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          botToken: botToken || undefined,
+          chatId: chatId || undefined,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (result.success) {
+        toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? "，已发送测试消息" : ""}`);
+      } else {
+        toast.error(`❌ 验证失败: ${result.error || `HTTP ${response.status}`}`);
+      }
+    } catch (e: unknown) {
+      toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : "未知错误"}`);
+    }
+  };
+
   // 加载订阅数据
   useEffect(() => {
     loadFeeds();
@@ -495,26 +521,7 @@ const RSSPage = () => {
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={async () => {
-                      try {
-                        const response = await fetch(`${BACKEND_URL}/api/bot/test`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            botToken: globalRssConfig.customBotToken || undefined,
-                            chatId: globalRssConfig.customChatId || undefined,
-                          }),
-                        });
-                        const result = await response.json();
-                        if (result.success) {
-                          toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
-                        } else {
-                          toast.error(`❌ 验证失败: ${result.error}`);
-                        }
-                      } catch (e: unknown) {
-                        toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
-                      }
-                    }}
+                    onClick={() => testBotConfig(globalRssConfig.customBotToken, globalRssConfig.customChatId)}
                   >
                     🧪 测试配置
                   </Button>
@@ -743,26 +750,7 @@ const RSSPage = () => {
                             variant="outline"
                             size="sm"
                             className="w-full"
-                            onClick={async () => {
-                              try {
-                                const response = await fetch(`${BACKEND_URL}/api/bot/test`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    botToken: newFeed.customBotToken || undefined,
-                                    chatId: newFeed.customChatId || undefined,
-                                  }),
-                                });
-                                const result = await response.json();
-                                if (result.success) {
-                                  toast.success(`✅ 验证成功！Bot: @${result.data.username}${result.data.messageSent ? '，已发送测试消息' : ''}`);
-                                } else {
-                                  toast.error(`❌ 验证失败: ${result.error}`);
-                                }
-                              } catch (e: unknown) {
-                                toast.error(`❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`);
-                              }
-                            }}
+                            onClick={() => testBotConfig(newFeed.customBotToken, newFeed.customChatId)}
                           >
                             🧪 测试配置
                           </Button>
