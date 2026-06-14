@@ -234,6 +234,7 @@ app.post('/api/restart', async (req, res) => {
 
     // 重新启动 Bot
     await startBot();
+    githubRoutes?.initGithubMonitor();
 
     res.json({ success: true, message: 'Bot 重启成功' });
   } catch (error) {
@@ -406,6 +407,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   // 尝试启动 Bot
   try {
     await startBot();
+    githubRoutes?.initGithubMonitor();
   } catch (err) {
     logger.error(`初始启动失败: ${err.message}`);
   }
